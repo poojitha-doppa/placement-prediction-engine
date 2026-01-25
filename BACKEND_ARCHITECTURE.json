@@ -1,0 +1,1053 @@
+{
+  "backend_architecture": {
+    "stack": {
+      "runtime": "Node.js 20+",
+      "framework": "Express 4.x",
+      "database": "PostgreSQL 15+",
+      "orm": "Prisma 5.x",
+      "cache": "Redis 7+ (optional, for sessions/rate limiting)",
+      "llm_sdk": "OpenAI SDK / Anthropic SDK",
+      "validation": "Zod for runtime type validation",
+      "authentication": "JWT (jsonwebtoken) + bcrypt for password hashing"
+    },
+    "folder_structure": {
+      "root": "placement-backend/",
+      "structure": [
+        "src/",
+        "  ├── config/          # env, db, llm config",
+        "  ├── middleware/      # auth, error handling, validation",
+        "  ├── routes/          # express route handlers",
+        "  │   ├── auth.routes.ts",
+        "  │   ├── profile.routes.ts",
+        "  │   ├── roadmap.routes.ts",
+        "  │   ├── analytics.routes.ts",
+        "  │   └── agent.routes.ts",
+        "  ├── controllers/     # business logic",
+        "  ├── services/        # core services (LLM, external APIs)",
+        "  │   ├── llm.service.ts",
+        "  │   ├── github.service.ts",
+        "  │   ├── codeforces.service.ts",
+        "  │   └── leetcode.service.ts",
+        "  ├── agents/          # LLM agent tools and prompts",
+        "  │   ├── tools.ts",
+        "  │   ├── roadmap-agent.ts",
+        "  │   └── insights-agent.ts",
+        "  ├── models/          # Prisma client exports",
+        "  ├── utils/           # helpers, crypto, validation schemas",
+        "  ├── jobs/            # cron jobs for external sync",
+        "  └── index.ts         # app entry point",
+        "prisma/",
+        "  ├── schema.prisma",
+        "  └── migrations/",
+        ".env.example",
+        "package.json",
+        "tsconfig.json"
+      ]
+    },
+    "environment_variables": {
+      "DATABASE_URL": "postgresql://user:pass@localhost:5432/placement_db",
+      "JWT_SECRET": "your-super-secret-jwt-key-min-32-chars",
+      "JWT_EXPIRES_IN": "7d",
+      "OPENAI_API_KEY": "sk-...",
+      "ANTHROPIC_API_KEY": "sk-ant-...",
+      "REDIS_URL": "redis://localhost:6379",
+      "PORT": "3000",
+      "NODE_ENV": "development|production",
+      "ENCRYPTION_KEY": "32-byte-key-for-api-token-encryption",
+      "CORS_ORIGIN": "http://localhost:5173"
+    }
+  },
+
+  "database_schema": {
+    "prisma_schema": "prisma/schema.prisma",
+    "models": {
+      "User": {
+        "fields": [
+          "id: String @id @default(uuid())",
+          "email: String @unique",
+          "password: String (bcrypt hashed)",
+          "name: String?",
+          "createdAt: DateTime @default(now())",
+          "updatedAt: DateTime @updatedAt",
+          "profile: Profile?",
+          "roadmaps: Roadmap[]",
+          "progressLogs: ProgressLog[]",
+          "externalIntegrations: ExternalIntegration[]",
+          "agentLogs: AgentLog[]"
+        ]
+      },
+      "Profile": {
+        "fields": [
+          "id: String @id @default(uuid())",
+          "userId: String @unique",
+          "user: User @relation(fields: [userId], references: [id])",
+          "college: String?",
+          "branch: String?",
+          "year: Int?",
+          "cgpa: Float?",
+          "skills: String[] (array of skill names)",
+          "targetCompanies: String[]",
+          "targetRoles: String[]",
+          "availableHoursPerWeek: Int @default(10)",
+          "resumeUrl: String?",
+          "githubUsername: String?",
+          "leetcodeUsername: String?",
+          "codeforcesUsername: String?",
+          "updatedAt: DateTime @updatedAt"
+        ]
+      },
+      "Roadmap": {
+        "fields": [
+          "id: String @id @default(uuid())",
+          "userId: String",
+          "user: User @relation(fields: [userId], references: [id])",
+          "durationWeeks: Int @default(16)",
+          "globalNotes: String[]",
+          "generatedAt: DateTime @default(now())",
+          "isActive: Boolean @default(true)",
+          "weeks: RoadmapWeek[]"
+        ]
+      },
+      "RoadmapWeek": {
+        "fields": [
+          "id: String @id @default(uuid())",
+          "roadmapId: String",
+          "roadmap: Roadmap @relation(fields: [roadmapId], references: [id])",
+          "weekNumber: Int",
+          "focusAreas: String[]",
+          "targets: String[]",
+          "expectedOutcomes: String[]",
+          "reasoning: String?",
+          "priorityScore: Float?",
+          "estimatedHours: Int?",
+          "phase: String? (Foundation/Core/Advanced/Polish)",
+          "tasks: RoadmapTask[]"
+        ]
+      },
+      "RoadmapTask": {
+        "fields": [
+          "id: String @id @default(uuid())",
+          "weekId: String",
+          "week: RoadmapWeek @relation(fields: [weekId], references: [id])",
+          "title: String",
+          "description: String?",
+          "estimatedHours: Int?",
+          "isCompleted: Boolean @default(false)",
+          "completedAt: DateTime?"
+        ]
+      },
+      "ProgressLog": {
+        "fields": [
+          "id: String @id @default(uuid())",
+          "userId: String",
+          "user: User @relation(fields: [userId], references: [id])",
+          "weekNumber: Int",
+          "taskId: String?",
+          "completionPercent: Float (0.0 to 100.0)",
+          "hoursSpent: Float?",
+          "notes: String?",
+          "timestamp: DateTime @default(now())",
+          "@@index([userId, weekNumber, timestamp])"
+        ]
+      },
+      "SkillAnalytics": {
+        "fields": [
+          "id: String @id @default(uuid())",
+          "userId: String",
+          "date: DateTime @default(now())",
+          "skillName: String",
+          "currentLevel: Float (0-100)",
+          "targetLevel: Float (0-100)",
+          "problemsSolved: Int?",
+          "source: String (manual/github/leetcode/codeforces)",
+          "@@index([userId, date, skillName])"
+        ]
+      },
+      "CompanyMatch": {
+        "fields": [
+          "id: String @id @default(uuid())",
+          "userId: String",
+          "companyName: String",
+          "fitScore: Float (0-100)",
+          "successProbability: Float (0-100)",
+          "packageMin: Float?",
+          "packageMax: Float?",
+          "requiredSkills: String[]",
+          "matchedSkills: String[]",
+          "skillGaps: String[]",
+          "minCGPA: Float?",
+          "hiringStatus: String? (Active/Upcoming/Closed)",
+          "computedAt: DateTime @default(now())",
+          "@@index([userId, fitScore])"
+        ]
+      },
+      "OptimizationInsight": {
+        "fields": [
+          "id: String @id @default(uuid())",
+          "userId: String",
+          "type: String (topic_priority/time_estimate/skill_focus)",
+          "title: String",
+          "priority: Float",
+          "estimatedImpact: Float?",
+          "data: Json (flexible JSON for insights)",
+          "generatedAt: DateTime @default(now())",
+          "@@index([userId, generatedAt])"
+        ]
+      },
+      "ExternalIntegration": {
+        "fields": [
+          "id: String @id @default(uuid())",
+          "userId: String",
+          "user: User @relation(fields: [userId], references: [id])",
+          "provider: String (github/leetcode/codeforces/hackerrank)",
+          "username: String",
+          "encryptedToken: String? (encrypted API key/OAuth token)",
+          "isConnected: Boolean @default(false)",
+          "lastSyncAt: DateTime?",
+          "syncStatus: String? (success/error)",
+          "syncError: String?",
+          "createdAt: DateTime @default(now())",
+          "metrics: ExternalMetric[]",
+          "@@unique([userId, provider])"
+        ]
+      },
+      "ExternalMetric": {
+        "fields": [
+          "id: String @id @default(uuid())",
+          "integrationId: String",
+          "integration: ExternalIntegration @relation(fields: [integrationId], references: [id])",
+          "date: DateTime",
+          "stats: Json (flexible: { problemsSolved, rating, commits, streak, etc. })",
+          "@@index([integrationId, date])"
+        ]
+      },
+      "AgentLog": {
+        "fields": [
+          "id: String @id @default(uuid())",
+          "userId: String",
+          "user: User @relation(fields: [userId], references: [id])",
+          "agentType: String (roadmap_generation/roadmap_update/insights)",
+          "inputPrompt: String @db.Text",
+          "inputData: Json",
+          "outputData: Json",
+          "tokensUsed: Int?",
+          "latencyMs: Int?",
+          "status: String (success/error/validation_failed)",
+          "errorMessage: String?",
+          "createdAt: DateTime @default(now())",
+          "@@index([userId, createdAt])"
+        ]
+      }
+    }
+  },
+
+  "auth_design": {
+    "strategy": "JWT (stateless) with HTTP-only cookies as primary, Authorization header as fallback",
+    "password_hashing": "bcrypt with 12 rounds",
+    "jwt_payload": {
+      "sub": "user_id (UUID)",
+      "email": "user@example.com",
+      "iat": "issued_at_timestamp",
+      "exp": "expiry_timestamp (7 days default)"
+    },
+    "routes": {
+      "POST /auth/signup": {
+        "request": {
+          "email": "string (validated email format)",
+          "password": "string (min 8 chars, 1 uppercase, 1 number, 1 special)",
+          "name": "string (optional)"
+        },
+        "response_201": {
+          "user": {
+            "id": "uuid",
+            "email": "user@example.com",
+            "name": "John Doe"
+          },
+          "token": "jwt_token_string"
+        },
+        "errors": {
+          "400": "Invalid input / Email already exists",
+          "500": "Server error"
+        }
+      },
+      "POST /auth/login": {
+        "request": {
+          "email": "string",
+          "password": "string"
+        },
+        "response_200": {
+          "user": {
+            "id": "uuid",
+            "email": "user@example.com",
+            "name": "John Doe"
+          },
+          "token": "jwt_token_string"
+        },
+        "errors": {
+          "401": "Invalid credentials",
+          "500": "Server error"
+        }
+      },
+      "POST /auth/logout": {
+        "description": "Clear HTTP-only cookie if used",
+        "response_200": {
+          "message": "Logged out successfully"
+        }
+      },
+      "GET /auth/me": {
+        "headers": {
+          "Authorization": "Bearer <jwt_token>"
+        },
+        "response_200": {
+          "user": {
+            "id": "uuid",
+            "email": "user@example.com",
+            "name": "John Doe",
+            "createdAt": "ISO timestamp"
+          }
+        },
+        "errors": {
+          "401": "Unauthorized / Invalid token"
+        }
+      }
+    },
+    "middleware": {
+      "authenticateJWT": "Express middleware that verifies JWT from Authorization header or cookie, attaches req.user",
+      "implementation": "export const authenticateJWT = async (req, res, next) => { const token = req.headers.authorization?.split(' ')[1] || req.cookies?.token; if (!token) return res.status(401).json({ error: 'No token' }); try { const decoded = jwt.verify(token, JWT_SECRET); req.user = await prisma.user.findUnique({ where: { id: decoded.sub } }); next(); } catch { res.status(401).json({ error: 'Invalid token' }); } }"
+    },
+    "frontend_integration": {
+      "axios_interceptor": "Add Authorization: Bearer <token> header to all requests after login",
+      "token_storage": "localStorage.setItem('token', response.data.token) on login; clear on logout",
+      "protected_routes": "AuthContext checks token presence; if missing, redirect to /login"
+    }
+  },
+
+  "api_design": {
+    "base_url": "http://localhost:3000",
+    "endpoints": {
+      "GET /api/profile": {
+        "auth": "required (JWT)",
+        "response_200": {
+          "id": "uuid",
+          "name": "John Doe",
+          "email": "john@example.com",
+          "college": "MIT",
+          "branch": "Computer Science",
+          "year": 3,
+          "cgpa": 8.5,
+          "skills": ["React", "Node.js", "Python", "SQL"],
+          "targetCompanies": ["Google", "Microsoft", "Amazon"],
+          "targetRoles": ["SDE", "Full Stack Developer"],
+          "availableHoursPerWeek": 15,
+          "resumeUrl": "https://s3.../resume.pdf",
+          "githubUsername": "johndoe",
+          "leetcodeUsername": "johndoe123",
+          "codeforcesUsername": null
+        }
+      },
+      "PUT /api/profile": {
+        "auth": "required",
+        "request": {
+          "name": "string?",
+          "college": "string?",
+          "branch": "string?",
+          "year": "number?",
+          "cgpa": "number?",
+          "skills": "string[]?",
+          "targetCompanies": "string[]?",
+          "targetRoles": "string[]?",
+          "availableHoursPerWeek": "number?",
+          "githubUsername": "string?",
+          "leetcodeUsername": "string?",
+          "codeforcesUsername": "string?"
+        },
+        "response_200": {
+          "message": "Profile updated",
+          "profile": { }
+        }
+      },
+      "GET /api/placement-summary": {
+        "auth": "required",
+        "description": "Computed from profile, progress logs, external metrics",
+        "response_200": {
+          "placementProbability": 78.5,
+          "highPackageProbability": 45.2,
+          "problemsSolved": 342,
+          "currentStreak": 12,
+          "weeklyProgress": 85.0,
+          "consistencyScore": 72.3,
+          "topSkills": [
+            { "name": "DSA", "level": 75 },
+            { "name": "System Design", "level": 60 }
+          ],
+          "lastUpdated": "2025-12-21T10:30:00Z"
+        },
+        "computation_logic": {
+          "placementProbability": "Weighted formula: 40% skill coverage + 30% consistency + 20% external metrics (LeetCode rating) + 10% CGPA",
+          "highPackageProbability": "Based on target company fit scores and skill gaps",
+          "problemsSolved": "Sum from ExternalMetric (LeetCode, Codeforces) + manual logs",
+          "currentStreak": "Consecutive days with progress logs or external activity",
+          "weeklyProgress": "Average completion_percent from ProgressLog for current week",
+          "consistencyScore": "Percentage of weeks with >50% completion over last 8 weeks"
+        }
+      },
+      "GET /api/roadmap": {
+        "auth": "required",
+        "response_200": {
+          "id": "uuid",
+          "durationWeeks": 16,
+          "overallProgress": 43.75,
+          "globalNotes": ["Focus on DSA for first 8 weeks", "Practice system design in weeks 12-14"],
+          "weeklyPlan": [
+            {
+              "id": "uuid",
+              "week": 1,
+              "phase": "Foundation",
+              "focusAreas": ["Arrays", "Strings", "Time Complexity"],
+              "targets": [
+                "Solve 20 easy array problems on LeetCode",
+                "Read CLRS Chapter 2 on complexity",
+                "Complete 5 string manipulation problems"
+              ],
+              "expectedOutcomes": ["Comfort with basic array patterns", "Understand O(n) vs O(n²)"],
+              "estimatedHours": 12,
+              "progress": 80.0,
+              "tasks": [
+                {
+                  "id": "uuid",
+                  "title": "LeetCode Easy Arrays (20 problems)",
+                  "description": "Two Sum, Best Time to Buy Stock, etc.",
+                  "estimatedHours": 8,
+                  "isCompleted": true
+                }
+              ]
+            }
+          ]
+        },
+        "computation": {
+          "overallProgress": "Average of all week completion percentages from ProgressLog"
+        }
+      },
+      "PUT /api/roadmap": {
+        "auth": "required",
+        "description": "Manual update (not commonly used; agent endpoints preferred)",
+        "request": {
+          "weeklyPlan": [ ]
+        },
+        "response_200": {
+          "message": "Roadmap updated",
+          "roadmap": { }
+        }
+      },
+      "GET /api/skill-analytics": {
+        "auth": "required",
+        "response_200": {
+          "skillProgression": [
+            {
+              "date": "2025-11-01",
+              "dsa": 50,
+              "systemDesign": 30,
+              "webDev": 70
+            },
+            {
+              "date": "2025-12-01",
+              "dsa": 65,
+              "systemDesign": 45,
+              "webDev": 75
+            }
+          ],
+          "currentSkills": [
+            { "name": "DSA", "current": 65, "target": 85, "gap": 20 },
+            { "name": "System Design", "current": 45, "target": 75, "gap": 30 }
+          ],
+          "weakAreas": ["Dynamic Programming", "Graph Algorithms", "Low-Level Design"]
+        },
+        "computation": {
+          "skillProgression": "Time-series from SkillAnalytics table, grouped by month",
+          "currentSkills": "Latest SkillAnalytics + manual profile skills vs target (derived from company requirements)",
+          "weakAreas": "Skills with gap > 15 points or mentioned in agent insights"
+        }
+      },
+      "GET /api/company-matches": {
+        "auth": "required",
+        "response_200": {
+          "totalMatches": 24,
+          "highFitCount": 8,
+          "maxPackage": 45.0,
+          "companies": [
+            {
+              "id": "uuid",
+              "name": "Google",
+              "fitScore": 82.5,
+              "successProbability": 68.0,
+              "packageRange": { "min": 20.0, "max": 45.0 },
+              "requiredSkills": ["DSA", "System Design", "Coding", "Problem Solving"],
+              "matchedSkills": ["DSA", "Coding"],
+              "skillGaps": ["System Design", "Problem Solving"],
+              "minCGPA": 7.5,
+              "hiringStatus": "Active"
+            }
+          ]
+        },
+        "computation": {
+          "fitScore": "Skill overlap % + CGPA match + external metrics (LeetCode rating)",
+          "successProbability": "fitScore * consistency * (1 - avg_skill_gap_ratio)",
+          "companies": "Fetched from static/seeded company_matches table; updated weekly by backend job"
+        }
+      },
+      "GET /api/optimization-insights": {
+        "auth": "required",
+        "response_200": {
+          "timeReduction": 3.2,
+          "expectedWeeks": 12.8,
+          "topPriorityTopics": [
+            {
+              "topic": "Dynamic Programming",
+              "priority": 0.92,
+              "estimatedImpact": 12.5,
+              "reasoning": "DP is required by 80% of target companies; current skill level is 40%."
+            },
+            {
+              "topic": "System Design Basics",
+              "priority": 0.85,
+              "estimatedImpact": 10.0,
+              "reasoning": "Missing in profile but critical for senior roles."
+            }
+          ],
+          "weeklyFocus": "Focus on DP (8h) and Trees (4h) this week based on roadmap week 5.",
+          "monteCarloDistribution": [
+            { "weeks": 10, "probability": 0.05 },
+            { "weeks": 12, "probability": 0.25 },
+            { "weeks": 14, "probability": 0.40 },
+            { "weeks": 16, "probability": 0.25 },
+            { "weeks": 18, "probability": 0.05 }
+          ]
+        },
+        "computation": {
+          "timeReduction": "Estimated weeks saved by using AI roadmap vs generic prep (heuristic)",
+          "expectedWeeks": "16 - (overallProgress / 100 * 16)",
+          "topPriorityTopics": "Fetched from OptimizationInsight table; generated by agent",
+          "monteCarloDistribution": "Simulated based on current progress rate + consistency variance"
+        }
+      },
+      "POST /api/roadmap/progress": {
+        "auth": "required",
+        "request": {
+          "weekNumber": 5,
+          "completionPercent": 75.0,
+          "taskId": "uuid (optional)",
+          "hoursSpent": 10.5,
+          "notes": "Completed 15/20 problems; struggled with sliding window."
+        },
+        "response_200": {
+          "message": "Progress logged",
+          "log": {
+            "id": "uuid",
+            "timestamp": "2025-12-21T10:30:00Z"
+          }
+        },
+        "side_effects": "Triggers recomputation of weeklyProgress, consistencyScore in placement-summary"
+      },
+      "GET /api/roadmap/progress-history": {
+        "auth": "required",
+        "query_params": {
+          "startDate": "2025-11-01 (optional)",
+          "endDate": "2025-12-21 (optional)"
+        },
+        "response_200": {
+          "history": [
+            {
+              "date": "2025-12-01",
+              "weekNumber": 3,
+              "completionPercent": 80.0,
+              "hoursSpent": 12.0
+            },
+            {
+              "date": "2025-12-08",
+              "weekNumber": 4,
+              "completionPercent": 90.0,
+              "hoursSpent": 14.0
+            }
+          ]
+        }
+      }
+    }
+  },
+
+  "progress_tracking": {
+    "model": "ProgressLog (see database_schema)",
+    "logging_flow": {
+      "trigger": "User updates week slider on RoadmapPage, or checks task as complete",
+      "frontend": "Calls POST /api/roadmap/progress with { weekNumber, completionPercent, taskId?, hoursSpent?, notes? }",
+      "backend": "Creates ProgressLog record with timestamp; updates RoadmapTask.isCompleted if taskId provided"
+    },
+    "metrics_computation": {
+      "weekly_completion": "SELECT AVG(completionPercent) FROM ProgressLog WHERE userId = ? AND weekNumber = ?",
+      "consistency_score": "Percentage of weeks with at least one log entry with completionPercent > 50% in last 8 weeks",
+      "streak": "Count consecutive days (by date(timestamp)) with any progress log",
+      "skill_progression": "Aggregate external metrics (LeetCode rating over time, GitHub commits) + manual skill updates"
+    },
+    "endpoints": {
+      "POST /api/roadmap/progress": "Log progress entry",
+      "GET /api/roadmap/progress-history": "Return time-series for LineChart on Analytics page"
+    },
+    "recomputation_triggers": {
+      "on_progress_log": "Update cached placement summary (placementProbability, weeklyProgress, consistencyScore)",
+      "on_external_sync": "Update problemsSolved, currentStreak from GitHub/LeetCode/Codeforces metrics"
+    }
+  },
+
+  "external_integrations": {
+    "platforms": [
+      {
+        "name": "GitHub",
+        "connection_method": "OAuth 2.0 (preferred) or Personal Access Token (PAT)",
+        "oauth_flow": {
+          "step_1": "Frontend redirects to /auth/github/connect",
+          "step_2": "Backend redirects to GitHub OAuth (scope: read:user, repo)",
+          "step_3": "GitHub redirects back to /auth/github/callback with code",
+          "step_4": "Backend exchanges code for access_token, encrypts and stores in ExternalIntegration.encryptedToken",
+          "step_5": "Backend redirects frontend to /profile with success message"
+        },
+        "manual_connection": "User provides PAT on profile page; backend stores encrypted",
+        "api_calls": {
+          "endpoint": "GET https://api.github.com/users/:username/events",
+          "metrics_fetched": {
+            "commits": "Count PushEvent in last 30 days",
+            "repos": "GET /users/:username/repos -> count active repos",
+            "contributions": "Parse contributions from events",
+            "streak": "Consecutive days with any commit event"
+          },
+          "rate_limit": "5000 requests/hour with OAuth token"
+        },
+        "data_model": {
+          "ExternalIntegration": {
+            "provider": "github",
+            "username": "johndoe",
+            "encryptedToken": "encrypted_oauth_token_here",
+            "isConnected": true,
+            "lastSyncAt": "2025-12-21T08:00:00Z"
+          },
+          "ExternalMetric": {
+            "date": "2025-12-21",
+            "stats": {
+              "commits": 15,
+              "repos": 8,
+              "streak": 12,
+              "languages": ["TypeScript", "Python", "Go"]
+            }
+          }
+        }
+      },
+      {
+        "name": "LeetCode",
+        "connection_method": "Username only (no official API; use GraphQL endpoint or scraping)",
+        "api_calls": {
+          "endpoint": "POST https://leetcode.com/graphql",
+          "query": "{ matchedUser(username: \"johndoe\") { submitStats { acSubmissionNum { difficulty, count } } profile { reputation, ranking } } }",
+          "metrics_fetched": {
+            "problemsSolved": "Sum of acSubmissionNum counts",
+            "easyCount": "acSubmissionNum[0].count",
+            "mediumCount": "acSubmissionNum[1].count",
+            "hardCount": "acSubmissionNum[2].count",
+            "ranking": "Global ranking",
+            "reputation": "LeetCode reputation points"
+          },
+          "rate_limit": "No official limit; use respectful scraping (max 1 req/min per user)"
+        },
+        "data_model": {
+          "ExternalIntegration": {
+            "provider": "leetcode",
+            "username": "johndoe123",
+            "encryptedToken": null,
+            "isConnected": true,
+            "lastSyncAt": "2025-12-21T08:00:00Z"
+          },
+          "ExternalMetric": {
+            "date": "2025-12-21",
+            "stats": {
+              "problemsSolved": 342,
+              "easy": 150,
+              "medium": 160,
+              "hard": 32,
+              "ranking": 12543,
+              "reputation": 1250
+            }
+          }
+        },
+        "fallback": "If GraphQL fails, use LeetCode API proxy services or manual entry"
+      },
+      {
+        "name": "Codeforces",
+        "connection_method": "Username only (public API available)",
+        "api_calls": {
+          "endpoint": "GET https://codeforces.com/api/user.info?handles=johndoe",
+          "metrics_fetched": {
+            "rating": "result[0].rating",
+            "maxRating": "result[0].maxRating",
+            "rank": "result[0].rank (Newbie/Pupil/Specialist/Expert...)",
+            "problemsSolved": "GET /api/user.status?handle=johndoe -> count unique accepted problems"
+          },
+          "rate_limit": "1 request per 2 seconds"
+        },
+        "data_model": {
+          "ExternalIntegration": {
+            "provider": "codeforces",
+            "username": "johndoe_cf",
+            "encryptedToken": null,
+            "isConnected": true,
+            "lastSyncAt": "2025-12-21T08:00:00Z"
+          },
+          "ExternalMetric": {
+            "date": "2025-12-21",
+            "stats": {
+              "rating": 1450,
+              "maxRating": 1520,
+              "rank": "Specialist",
+              "problemsSolved": 180
+            }
+          }
+        }
+      }
+    ],
+    "security": {
+      "token_encryption": "Use AES-256-GCM with ENCRYPTION_KEY from .env; store IV with ciphertext",
+      "implementation": "import crypto; const encrypt = (text) => { const iv = crypto.randomBytes(16); const cipher = crypto.createCipheriv('aes-256-gcm', Buffer.from(ENCRYPTION_KEY, 'hex'), iv); let encrypted = cipher.update(text, 'utf8', 'hex'); encrypted += cipher.final('hex'); const authTag = cipher.getAuthTag(); return iv.toString('hex') + ':' + authTag.toString('hex') + ':' + encrypted; }",
+      "storage": "Only backend has ENCRYPTION_KEY; frontend never sees tokens",
+      "transmission": "Tokens never sent to frontend; only connection status returned"
+    },
+    "sync_strategy": {
+      "method": "CRON job (node-cron or Bull queue with Redis)",
+      "schedule": "Daily at 2 AM UTC for all connected users",
+      "job_logic": [
+        "1. Fetch all ExternalIntegration where isConnected = true",
+        "2. For each integration:",
+        "   a. Decrypt token (if present)",
+        "   b. Call provider API (GitHub, LeetCode, Codeforces)",
+        "   c. Parse metrics and create ExternalMetric record for today's date",
+        "   d. Update ExternalIntegration.lastSyncAt and syncStatus",
+        "3. Recompute SkillAnalytics and PlacementSummary for affected users",
+        "4. Log any sync errors to ExternalIntegration.syncError"
+      ],
+      "error_handling": "On API failure (rate limit, invalid token), set syncStatus = 'error', syncError = message; send email notification to user",
+      "manual_sync": "Provide POST /api/integrations/:provider/sync endpoint for on-demand refresh (rate-limited to 1/hour per user)"
+    }
+  },
+
+  "agent_design": {
+    "llm_provider": "OpenAI GPT-4 or Anthropic Claude 3.5 Sonnet (configurable via .env)",
+    "framework": "Custom tool-calling setup or LangChain",
+    "tools": {
+      "get_profile": {
+        "description": "Fetch student profile including skills, CGPA, target companies, available hours",
+        "input_schema": {
+          "user_id": "string (UUID)"
+        },
+        "output_schema": {
+          "profile": {
+            "name": "string",
+            "college": "string",
+            "branch": "string",
+            "year": "number",
+            "cgpa": "number",
+            "skills": "string[]",
+            "targetCompanies": "string[]",
+            "availableHoursPerWeek": "number"
+          }
+        },
+        "implementation": "async function getProfile(userId) { return await prisma.profile.findUnique({ where: { userId } }); }"
+      },
+      "get_analytics": {
+        "description": "Fetch skill analytics, consistency metrics, external platform stats",
+        "input_schema": {
+          "user_id": "string (UUID)"
+        },
+        "output_schema": {
+          "analytics": {
+            "skillProgression": "array",
+            "currentSkills": "array",
+            "weakAreas": "string[]",
+            "consistencyScore": "number",
+            "weeklyProgress": "number",
+            "externalMetrics": {
+              "leetcode": { "problemsSolved": "number", "rating": "number?" },
+              "github": { "commits": "number", "streak": "number" },
+              "codeforces": { "rating": "number?", "problemsSolved": "number" }
+            }
+          }
+        }
+      },
+      "get_roadmap": {
+        "description": "Fetch current active roadmap with all weeks and progress",
+        "input_schema": {
+          "user_id": "string (UUID)"
+        },
+        "output_schema": {
+          "roadmap": {
+            "id": "string",
+            "durationWeeks": "number",
+            "overallProgress": "number",
+            "weeklyPlan": "array"
+          }
+        }
+      },
+      "update_roadmap": {
+        "description": "Create or replace user's roadmap with new plan",
+        "input_schema": {
+          "user_id": "string (UUID)",
+          "roadmap_json": {
+            "durationWeeks": "number",
+            "globalNotes": "string[]",
+            "weeklyPlan": "array (must match RoadmapWeek schema)"
+          }
+        },
+        "output_schema": {
+          "success": "boolean",
+          "roadmapId": "string (UUID)"
+        },
+        "implementation": "Mark current roadmap as isActive=false; create new Roadmap + RoadmapWeek records; validate against JSON schema first"
+      },
+      "log_agent_recommendation": {
+        "description": "Log an agent-generated insight or recommendation for auditing",
+        "input_schema": {
+          "user_id": "string (UUID)",
+          "payload": {
+            "type": "string (roadmap_generation/insight/warning)",
+            "title": "string",
+            "message": "string",
+            "metadata": "object (optional)"
+          }
+        },
+        "output_schema": {
+          "logId": "string (UUID)"
+        }
+      }
+    },
+    "roadmap_generation": {
+      "endpoint": "POST /agent/generate-roadmap",
+      "trigger": "User clicks 'Generate Roadmap' on ProfilePage or RoadmapPage",
+      "request": {
+        "forceRegenerate": "boolean (default false; if true, ignore current roadmap)"
+      },
+      "agent_flow": [
+        "1. Call get_profile(user_id) -> profile",
+        "2. Call get_analytics(user_id) -> analytics",
+        "3. Call get_roadmap(user_id) -> currentRoadmap (if exists)",
+        "4. Construct LLM prompt:",
+        "   System: 'You are a placement prep expert. Generate a personalized 16-week roadmap.'",
+        "   User: JSON with { profile, analytics, currentRoadmap? }",
+        "   Instruction: 'Output strict JSON matching this schema: { durationWeeks, weeklyPlan: [{ week, focusAreas, targets, expectedOutcomes, reasoning, priorityScore, estimatedHours, phase }], globalNotes }'",
+        "5. Call LLM with tools available (get_profile, get_analytics) for any clarifications",
+        "6. Parse LLM output; validate against Zod schema",
+        "7. If valid, call update_roadmap(user_id, roadmap_json)",
+        "8. Log entire interaction to AgentLog",
+        "9. Return roadmap to frontend"
+      ],
+      "response_200": {
+        "roadmap": {
+          "id": "uuid",
+          "durationWeeks": 16,
+          "weeklyPlan": [ ],
+          "globalNotes": [ ]
+        },
+        "message": "Roadmap generated successfully"
+      },
+      "llm_prompt_template": "You are an AI placement preparation coach. Based on the student's profile and analytics below, generate a personalized 16-week roadmap.\n\nProfile:\n{profile}\n\nAnalytics:\n{analytics}\n\nCurrent Roadmap (if any):\n{currentRoadmap}\n\nRequirements:\n- Total 16 weeks divided into 4 phases: Foundation (weeks 1-4), Core (weeks 5-8), Advanced (weeks 9-12), Polish (weeks 13-16).\n- Each week must have: focusAreas (2-4 topics), targets (3-5 specific measurable goals), expectedOutcomes (1-3 outcomes), reasoning (why this week matters), priorityScore (0-1), estimatedHours (based on availableHoursPerWeek).\n- Prioritize weak areas from analytics.weakAreas.\n- Align topics with targetCompanies' requirements.\n- Output ONLY valid JSON matching this schema:\n{\n  \"durationWeeks\": 16,\n  \"weeklyPlan\": [\n    {\n      \"week\": 1,\n      \"phase\": \"Foundation\",\n      \"focusAreas\": [\"Arrays\", \"Strings\"],\n      \"targets\": [\"Solve 20 easy array problems on LeetCode\", \"Learn two-pointer technique\"],\n      \"expectedOutcomes\": [\"Comfort with basic patterns\"],\n      \"reasoning\": \"Student has weak DSA base; starting with fundamentals.\",\n      \"priorityScore\": 0.90,\n      \"estimatedHours\": 12\n    }\n  ],\n  \"globalNotes\": [\"Focus on consistency over speed\", \"Review weekly progress every Sunday\"]\n}\n\nDo NOT include any markdown, explanations, or text outside the JSON."
+    },
+    "roadmap_update": {
+      "endpoint": "POST /agent/update-roadmap",
+      "trigger": "User requests roadmap adjustment (e.g., 'I fell behind, adjust remaining weeks')",
+      "request": {
+        "reason": "string (why update is needed, e.g., 'Fell behind in week 5')",
+        "adjustmentType": "string (rebalance_remaining / add_focus_area / extend_duration)"
+      },
+      "agent_flow": [
+        "1. Call get_roadmap(user_id) -> currentRoadmap",
+        "2. Call get_analytics(user_id) -> progressSummary",
+        "3. Construct prompt: 'The student requests: {reason}. Current roadmap: {currentRoadmap}. Progress: {progressSummary}. Adjust the remaining weeks to help them catch up.'",
+        "4. LLM outputs updated weeklyPlan for remaining weeks only",
+        "5. Validate and merge with existing weeks",
+        "6. Call update_roadmap(user_id, mergedRoadmap)",
+        "7. Log and return"
+      ],
+      "response_200": {
+        "roadmap": { },
+        "message": "Roadmap updated based on your request"
+      }
+    },
+    "dashboard_insights": {
+      "endpoint": "GET /agent/dashboard-insights",
+      "trigger": "DashboardPage and AnalyticsPage load; cached for 1 hour per user",
+      "agent_flow": [
+        "1. Fetch latest: profile, analytics, progress logs (last 2 weeks), external metrics",
+        "2. Construct prompt: 'Analyze this student's progress and generate 3-5 actionable insights.'",
+        "3. LLM outputs JSON array of insights",
+        "4. Validate each insight against schema",
+        "5. Store in OptimizationInsight table with type='agent_insight'",
+        "6. Return to frontend"
+      ],
+      "response_200": {
+        "insights": [
+          {
+            "type": "warning",
+            "title": "DSA Consistency Dropped",
+            "message": "You completed only 40% of DSA tasks this week, down from 80% last week.",
+            "recommendedAction": "Dedicate 2 extra hours this weekend to catch up on DP problems.",
+            "priority": "high"
+          },
+          {
+            "type": "success",
+            "title": "GitHub Streak Strong",
+            "message": "You've maintained a 15-day commit streak! Keep it up.",
+            "recommendedAction": null,
+            "priority": "low"
+          },
+          {
+            "type": "info",
+            "title": "System Design Gap",
+            "message": "4 of your target companies require System Design; your current level is 40%.",
+            "recommendedAction": "Start System Design Primer in week 10 as planned.",
+            "priority": "medium"
+          }
+        ],
+        "generatedAt": "2025-12-21T10:30:00Z"
+      },
+      "llm_prompt_template": "You are an AI career coach analyzing a student's placement prep progress.\n\nProfile:\n{profile}\n\nRecent Progress:\n{progressLogs}\n\nExternal Metrics:\n{externalMetrics}\n\nAnalytics:\n{analytics}\n\nGenerate 3-5 concise, actionable insights in JSON format:\n[\n  {\n    \"type\": \"warning\" | \"info\" | \"success\",\n    \"title\": \"Short title (5-8 words)\",\n    \"message\": \"1-2 sentence observation\",\n    \"recommendedAction\": \"Specific action step (or null)\",\n    \"priority\": \"high\" | \"medium\" | \"low\"\n  }\n]\n\nFocus on:\n- Consistency trends (streaks, completion rates)\n- Skill gaps relative to target companies\n- External metrics (LeetCode rating changes, GitHub activity)\n- Upcoming roadmap milestones\n\nOutput ONLY valid JSON array. No markdown or extra text."
+    },
+    "tool_orchestration": {
+      "framework": "Use OpenAI function calling or Anthropic tool use",
+      "example_openai": {
+        "model": "gpt-4-turbo",
+        "messages": [
+          { "role": "system", "content": "You are a placement prep expert with access to tools." },
+          { "role": "user", "content": "Generate a roadmap for user 123" }
+        ],
+        "tools": [
+          {
+            "type": "function",
+            "function": {
+              "name": "get_profile",
+              "description": "Fetch student profile",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "user_id": { "type": "string" }
+                },
+                "required": ["user_id"]
+              }
+            }
+          }
+        ],
+        "tool_choice": "auto"
+      },
+      "backend_handler": "When LLM requests tool call, backend executes corresponding function and returns result in next message"
+    }
+  },
+
+  "frontend_wiring": {
+    "minimal_changes_required": "Frontend API calls remain the same; only update base URL from mock to real backend",
+    "axios_setup": {
+      "file": "src/api/api.ts (new file)",
+      "content": "import axios from 'axios';\n\nconst api = axios.create({\n  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:3000',\n  headers: { 'Content-Type': 'application/json' }\n});\n\napi.interceptors.request.use(config => {\n  const token = localStorage.getItem('token');\n  if (token) config.headers.Authorization = `Bearer ${token}`;\n  return config;\n});\n\napi.interceptors.response.use(\n  response => response,\n  error => {\n    if (error.response?.status === 401) {\n      localStorage.removeItem('token');\n      window.location.href = '/login';\n    }\n    return Promise.reject(error);\n  }\n);\n\nexport default api;"
+    },
+    "update_mockApi_to_real": {
+      "before": "import { mockProfile } from './mockApi'; // returns static data",
+      "after": "import api from './api';\n\nexport const getStudentProfile = async () => {\n  const { data } = await api.get('/api/profile');\n  return data;\n};\n\nexport const updateStudentProfile = async (updates) => {\n  const { data } = await api.put('/api/profile', updates);\n  return data.profile;\n};"
+    },
+    "react_query_hooks": {
+      "no_changes_needed": "Hooks like useQuery(['profile'], getStudentProfile) work as-is once getStudentProfile calls real API",
+      "example": "// src/hooks/useProfile.ts\nimport { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';\nimport { getStudentProfile, updateStudentProfile } from '../api/api';\n\nexport const useProfile = () => {\n  return useQuery({ queryKey: ['profile'], queryFn: getStudentProfile });\n};\n\nexport const useUpdateProfile = () => {\n  const queryClient = useQueryClient();\n  return useMutation({\n    mutationFn: updateStudentProfile,\n    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['profile'] })\n  });\n};"
+    },
+    "auth_integration": {
+      "update_AuthContext": {
+        "before": "Mock login with hardcoded token",
+        "after": "Call POST /auth/login, store real JWT, call GET /auth/me to fetch user on mount"
+      },
+      "login_flow": "const login = async (email, password) => {\n  const { data } = await api.post('/auth/login', { email, password });\n  localStorage.setItem('token', data.token);\n  setUser(data.user);\n};"
+    },
+    "new_agent_endpoints": {
+      "add_functions": [
+        "export const generateRoadmap = async () => { const { data } = await api.post('/agent/generate-roadmap'); return data.roadmap; };",
+        "export const updateRoadmap = async (reason, adjustmentType) => { const { data } = await api.post('/agent/update-roadmap', { reason, adjustmentType }); return data.roadmap; };",
+        "export const getDashboardInsights = async () => { const { data } = await api.get('/agent/dashboard-insights'); return data.insights; };"
+      ],
+      "usage_in_pages": {
+        "RoadmapPage": "Add 'Regenerate Roadmap' button that calls generateRoadmap mutation",
+        "DashboardPage": "useQuery(['insights'], getDashboardInsights) to show insights in a card",
+        "AnalyticsPage": "Display insights in a dedicated 'AI Recommendations' section"
+      }
+    },
+    "progress_logging": {
+      "WeekCard_component": "When user drags progress slider, call POST /api/roadmap/progress with { weekNumber, completionPercent }",
+      "implementation": "const logProgress = useMutation({\n  mutationFn: (data) => api.post('/api/roadmap/progress', data),\n  onSuccess: () => queryClient.invalidateQueries(['roadmap', 'placement-summary'])\n});\n\nconst handleSliderChange = (value) => {\n  setProgress(value);\n  logProgress.mutate({ weekNumber: week, completionPercent: value });\n};"
+    },
+    "external_connections": {
+      "ProfilePage": "Add 'Connect GitHub' button -> redirects to /auth/github/connect; on callback, show success toast",
+      "display_status": "Fetch connection status from profile.githubUsername + externalIntegrations table (backend returns isConnected flag)"
+    }
+  },
+
+  "safety_and_validation": {
+    "json_schema_validation": {
+      "library": "Zod (https://zod.dev)",
+      "roadmap_schema": "const WeekSchema = z.object({\n  week: z.number().int().min(1).max(16),\n  phase: z.enum(['Foundation', 'Core', 'Advanced', 'Polish']),\n  focusAreas: z.array(z.string()).min(1).max(5),\n  targets: z.array(z.string()).min(1).max(8),\n  expectedOutcomes: z.array(z.string()).min(1).max(5),\n  reasoning: z.string().optional(),\n  priorityScore: z.number().min(0).max(1).optional(),\n  estimatedHours: z.number().int().min(1).max(40).optional()\n});\n\nconst RoadmapSchema = z.object({\n  durationWeeks: z.literal(16),\n  weeklyPlan: z.array(WeekSchema).length(16),\n  globalNotes: z.array(z.string()).optional()\n});\n\nexport const validateRoadmap = (data) => RoadmapSchema.parse(data);",
+      "insight_schema": "const InsightSchema = z.object({\n  type: z.enum(['warning', 'info', 'success']),\n  title: z.string().min(5).max(100),\n  message: z.string().min(10).max(500),\n  recommendedAction: z.string().nullable(),\n  priority: z.enum(['high', 'medium', 'low'])\n});\n\nconst InsightsResponseSchema = z.array(InsightSchema).min(1).max(10);\n\nexport const validateInsights = (data) => InsightsResponseSchema.parse(data);"
+    },
+    "guardrails": {
+      "no_fabricated_data": {
+        "rule": "Agent must not invent company cutoffs, package ranges, or hiring status",
+        "enforcement": "LLM system prompt includes: 'Use only company data from get_company_matches tool. If data is missing, respond with: \"Company data not available. Focus on building strong fundamentals.\"'",
+        "example_prompt_addition": "IMPORTANT: Do NOT fabricate or assume company-specific details (cutoffs, packages, requirements) that are not in the provided data. If unsure, give generic advice."
+      },
+      "no_guarantees": {
+        "rule": "Agent must not guarantee job offers or specific outcomes",
+        "prompt_instruction": "Never promise placement or job offers. Use probabilistic language: 'likely to improve chances', 'increases probability', etc."
+      },
+      "scope_limitation": {
+        "rule": "Agent should only answer placement prep questions; reject off-topic queries",
+        "implementation": "Add input validation: if user message contains profanity or completely unrelated topics, return 400 error: 'Please ask placement preparation related questions.'"
+      },
+      "data_privacy": {
+        "rule": "Never log PII (email, phone) in agent logs; only user IDs",
+        "implementation": "AgentLog stores userId (UUID) but no direct email/name; sanitize inputData to remove sensitive fields"
+      }
+    },
+    "llm_output_sanitization": {
+      "step_1": "Parse LLM response as JSON",
+      "step_2": "Validate against Zod schema",
+      "step_3": "If validation fails, log error to AgentLog with status='validation_failed', return 500 to frontend with generic error",
+      "step_4": "Sanitize strings (remove HTML tags, limit length)",
+      "step_5": "Check for toxic content (optional: use content moderation API)"
+    },
+    "logging_and_auditing": {
+      "what_to_log": {
+        "agentType": "roadmap_generation / roadmap_update / insights",
+        "inputPrompt": "Full system + user prompt sent to LLM (truncate to 10KB)",
+        "inputData": "Sanitized JSON of tools data (no PII)",
+        "outputData": "LLM response JSON",
+        "tokensUsed": "From LLM API response (for cost tracking)",
+        "latencyMs": "Time from LLM request to response",
+        "status": "success / error / validation_failed",
+        "errorMessage": "If failed, error details"
+      },
+      "retention": "Keep AgentLog for 90 days; anonymize and archive for training data",
+      "access_control": "Only admins can view AgentLog via internal dashboard",
+      "user_visibility": "Students can see their agent interaction history via GET /api/agent/history (last 10 interactions)"
+    },
+    "rate_limiting": {
+      "agent_endpoints": "Max 5 roadmap generations per user per day (prevent abuse and control LLM costs)",
+      "progress_logging": "Max 100 progress logs per user per day",
+      "implementation": "Use express-rate-limit middleware or Redis-based rate limiter",
+      "example": "import rateLimit from 'express-rate-limit';\n\nconst agentLimiter = rateLimit({\n  windowMs: 24 * 60 * 60 * 1000, // 24h\n  max: 5,\n  message: 'Too many roadmap generation requests. Try again tomorrow.',\n  keyGenerator: (req) => req.user.id\n});\n\nrouter.post('/agent/generate-roadmap', authenticateJWT, agentLimiter, generateRoadmapController);"
+    },
+    "error_handling": {
+      "llm_api_errors": {
+        "timeout": "If LLM takes > 30s, return 504 Gateway Timeout: 'Agent is taking longer than expected. Try again.'",
+        "rate_limit": "If OpenAI/Anthropic rate limit hit, return 503: 'Service temporarily unavailable. Retry in 1 minute.'",
+        "invalid_response": "If LLM returns malformed JSON, log to AgentLog, return 500: 'Failed to generate roadmap. Our team has been notified.'"
+      },
+      "database_errors": "Wrap all Prisma queries in try-catch; return 500 with generic message; log full error server-side",
+      "external_api_errors": "If GitHub/LeetCode API fails during sync, set syncStatus='error', continue with other integrations"
+    }
+  }
+}
