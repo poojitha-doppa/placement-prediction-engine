@@ -135,6 +135,8 @@ export const signup = async (req: Request, res: Response) => {
 export const login = async (req: Request, res: Response) => {
   try {
     const validatedData = loginSchema.parse(req.body);
+    
+    console.log(`🔐 Login attempt for: ${validatedData.email}`);
 
     const dbAvailable = await isDatabaseAvailable();
 
@@ -182,7 +184,10 @@ export const login = async (req: Request, res: Response) => {
         return res.status(401).json({ error: 'Invalid email or password. Try signing up first.' });
       }
 
+      console.log(`🔍 Comparing passwords for ${validatedData.email}...`);
       const isValidPassword = await bcrypt.compare(validatedData.password, user.password);
+      console.log(`🔍 Password valid: ${isValidPassword}`);
+      
       if (!isValidPassword) {
         console.log(`❌ Login failed: Invalid password for ${validatedData.email}`);
         return res.status(401).json({ error: 'Invalid email or password' });

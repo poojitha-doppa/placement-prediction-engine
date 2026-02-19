@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { getRoadmap, logProgress, getProgressHistory } from '../controllers/roadmap.controller.js';
+import { getRoadmap, logProgress, getProgressHistory, saveRoadmapPreferences, getRoadmapPreferences } from '../controllers/roadmap.controller.js';
 import { 
   getPlacementSummary, 
   getSkillAnalytics, 
@@ -14,6 +14,8 @@ const router = Router();
 router.get('/roadmap', authenticateJWT, getRoadmap);
 router.post('/roadmap/progress', authenticateJWT, logProgress);
 router.get('/roadmap/progress-history', authenticateJWT, getProgressHistory);
+router.post('/roadmap/preferences', authenticateJWT, saveRoadmapPreferences);
+router.get('/roadmap/preferences', authenticateJWT, getRoadmapPreferences);
 
 // Analytics routes
 router.get('/placement-summary', authenticateJWT, getPlacementSummary);

@@ -3,8 +3,8 @@ import { AuthRequest } from '../middleware/auth.js';
 import prisma from '../config/db.js';
 import { profileUpdateSchema } from '../utils/validation.js';
 
-// In-memory profile store for mock mode
-const mockProfiles: any = {};
+// In-memory profile store for mock mode - exported for use in analytics
+export const mockProfiles: any = {};
 
 // Initialize default profile for test user
 const initializeDefaultProfile = () => {
@@ -16,8 +16,8 @@ const initializeDefaultProfile = () => {
     branch: 'Computer Science and Engineering',
     year: 2026,
     cgpa: 8.75,
-    skills: ['JavaScript', 'React', 'Node.js', 'Python', 'Data Structures', 'Algorithms', 'System Design'],
-    targetCompanies: ['Google', 'Microsoft', 'Amazon', 'Meta', 'Apple'],
+    skills: ['JavaScript', 'TypeScript', 'React', 'Node.js', 'Python', 'Data Structures', 'Algorithms', 'System Design', 'SQL', 'MongoDB'],
+    targetCompanies: ['Google', 'Microsoft', 'Amazon', 'Meta', 'Apple', 'Netflix'],
     targetRoles: ['Software Engineer', 'Full Stack Developer', 'Backend Developer'],
     availableHoursPerWeek: 25,
     resumeUrl: null,
@@ -83,24 +83,34 @@ export const getProfile = async (req: AuthRequest, res: Response) => {
       });
     } else {
       // Mock mode - return complete profile with demo data
-      const profile = mockProfiles[req.user.id] || {
-        id: `profile-${req.user.id}`,
-        name: req.user.name || 'Poojitha Doppa',
-        email: req.user.email || 'poojithadoppa8@gmail.com',
-        college: 'Demo University',
-        branch: 'Computer Science',
-        year: 2026,
-        cgpa: 8.5,
-        skills: ['JavaScript', 'React', 'Node.js', 'Python', 'Data Structures', 'Algorithms'],
-        targetCompanies: ['Google', 'Microsoft', 'Amazon', 'Meta'],
-        targetRoles: ['Software Engineer', 'Full Stack Developer'],
-        availableHoursPerWeek: 20,
-        resumeUrl: null,
-        githubUsername: 'demo-user',
-        leetcodeUsername: 'demo-user',
-        codeforcesUsername: 'demo-user'
-      };
+      let profile = mockProfiles[req.user.id];
+      
+      if (!profile) {
+        // Create default profile for any user
+        profile = {
+          id: `profile-${req.user.id}`,
+          name: req.user.name || 'Poojitha Doppa',
+          email: req.user.email || 'poojithadoppa8@gmail.com',
+          college: 'Vellore Institute of Technology',
+          branch: 'Computer Science and Engineering',
+          year: 2026,
+          cgpa: 8.75,
+          skills: ['JavaScript', 'TypeScript', 'React', 'Node.js', 'Python', 'Data Structures', 'Algorithms', 'System Design', 'SQL', 'MongoDB'],
+          targetCompanies: ['Google', 'Microsoft', 'Amazon', 'Meta', 'Apple', 'Netflix'],
+          targetRoles: ['Software Engineer', 'Full Stack Developer', 'Backend Developer'],
+          availableHoursPerWeek: 25,
+          resumeUrl: null,
+          githubUsername: 'poojitha-dev',
+          leetcodeUsername: 'poojitha_coder',
+          codeforcesUsername: 'poojitha_cf',
+          leetcodeSolved: 287,
+          githubProjects: 12,
+          lastUpdated: new Date().toISOString()
+        };
+        mockProfiles[req.user.id] = profile;
+      }
 
+      console.log(`✅ Profile fetched for ${req.user.email}:`, profile.name);
       res.json(profile);
     }
   } catch (error) {
@@ -111,7 +121,14 @@ export const getProfile = async (req: AuthRequest, res: Response) => {
 
 export const updateProfile = async (req: AuthRequest, res: Response) => {
   try {
+    console.log('📝 Update profile request received');
+    console.log('User ID:', req.user.id);
+    console.log('User Email:', req.user.email);
+    console.log('Request body:', JSON.stringify(req.body, null, 2));
+    
     const validatedData = profileUpdateSchema.parse(req.body);
+    console.log('✅ Validation passed');
+    
     const dbAvailable = await isDatabaseAvailable();
 
     if (dbAvailable) {
@@ -170,6 +187,7 @@ export const updateProfile = async (req: AuthRequest, res: Response) => {
       });
     } else {
       // Mock mode
+      console.log('📦 Running in mock mode');
       const currentProfile = mockProfiles[req.user.id] || {};
       mockProfiles[req.user.id] = {
         ...currentProfile,
@@ -190,13 +208,18 @@ export const updateProfile = async (req: AuthRequest, res: Response) => {
         resumeUrl: currentProfile.resumeUrl || null
       };
 
+      console.log('✅ Profile updated successfully in mock mode');
+      console.log('Updated profile:', mockProfiles[req.user.id]);
+
       res.json({
         message: 'Profile updated successfully',
         profile: mockProfiles[req.user.id]
       });
     }
   } catch (error: any) {
+    console.error('❌ Update profile error:', error);
     if (error.name === 'ZodError') {
+      console.error('Validation errors:', error.errors);
       return res.status(400).json({ error: 'Invalid input', details: error.errors });
     }
     console.error('Update profile error:', error);

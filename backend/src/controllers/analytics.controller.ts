@@ -1,6 +1,7 @@
 import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth.js';
 import prisma from '../config/db.js';
+import { mockProfiles } from './profile.controller.js';
 
 // Check if database is available
 const isDatabaseAvailable = async () => {
@@ -13,84 +14,146 @@ const isDatabaseAvailable = async () => {
   }
 };
 
-// Mock data generator
-const generateMockAnalytics = (userId: string) => {
-  const skills = ['JavaScript', 'React', 'Node.js', 'Python', 'SQL', 'Data Structures', 'Algorithms', 'System Design'];
+// Mock data generator with user's target companies
+const generateMockAnalytics = (userId: string, userProfile?: any) => {
+  // Get target companies from user profile or use defaults
+  const targetCompanies = userProfile?.targetCompanies || mockProfiles[userId]?.targetCompanies || ['Google', 'Microsoft', 'Amazon', 'Meta', 'Apple', 'Netflix'];
+  const targetRoles = userProfile?.targetRoles || mockProfiles[userId]?.targetRoles || ['Software Engineer', 'Full Stack Developer'];
+  const userSkills = userProfile?.skills || mockProfiles[userId]?.skills || ['JavaScript', 'TypeScript', 'React', 'Node.js', 'Python'];
+  
+  // Define all possible companies with their details
+  const allCompanies: any = {
+    'Google': { role: 'Software Engineer', fitScore: 85, successProbability: 72, packageRange: { min: 20, max: 35 }, requiredSkills: ['Data Structures', 'Algorithms', 'System Design'], skillGaps: ['System Design', 'Advanced Algorithms'] },
+    'Microsoft': { role: 'Software Development Engineer', fitScore: 82, successProbability: 75, packageRange: { min: 18, max: 32 }, requiredSkills: ['Cloud', 'Azure', 'C#'], skillGaps: ['Cloud Computing', 'Azure'] },
+    'Amazon': { role: 'Software Development Engineer', fitScore: 78, successProbability: 68, packageRange: { min: 16, max: 30 }, requiredSkills: ['AWS', 'Distributed Systems'], skillGaps: ['AWS', 'Distributed Systems'] },
+    'Meta': { role: 'Software Engineer', fitScore: 75, successProbability: 65, packageRange: { min: 19, max: 34 }, requiredSkills: ['React', 'React Native', 'GraphQL'], skillGaps: ['React Native', 'GraphQL'] },
+    'Apple': { role: 'Software Engineer', fitScore: 72, successProbability: 60, packageRange: { min: 17, max: 31 }, requiredSkills: ['Swift', 'iOS', 'Objective-C'], skillGaps: ['Swift', 'iOS', 'Objective-C'] },
+    'Netflix': { role: 'Software Engineer', fitScore: 70, successProbability: 62, packageRange: { min: 17, max: 33 }, requiredSkills: ['Microservices', 'Distributed Systems', 'Java'], skillGaps: ['Microservices', 'Java'] },
+    'Adobe': { role: 'Full Stack Developer', fitScore: 70, successProbability: 62, packageRange: { min: 15, max: 28 }, requiredSkills: ['JavaScript', 'React', 'Node.js'], skillGaps: ['Advanced UI/UX'] },
+    'Salesforce': { role: 'Application Developer', fitScore: 68, successProbability: 58, packageRange: { min: 14, max: 26 }, requiredSkills: ['Apex', 'Salesforce Platform'], skillGaps: ['Salesforce', 'Apex'] },
+    'Oracle': { role: 'Software Engineer', fitScore: 65, successProbability: 55, packageRange: { min: 12, max: 24 }, requiredSkills: ['Java', 'SQL', 'Cloud'], skillGaps: ['Java', 'Oracle Cloud'] },
+    'Uber': { role: 'Backend Engineer', fitScore: 73, successProbability: 64, packageRange: { min: 16, max: 29 }, requiredSkills: ['Go', 'Microservices', 'Distributed Systems'], skillGaps: ['Go', 'Distributed Systems'] },
+    'Airbnb': { role: 'Full Stack Engineer', fitScore: 71, successProbability: 63, packageRange: { min: 16, max: 30 }, requiredSkills: ['React', 'Ruby', 'GraphQL'], skillGaps: ['Ruby', 'GraphQL'] },
+    'LinkedIn': { role: 'Software Engineer', fitScore: 74, successProbability: 66, packageRange: { min: 17, max: 31 }, requiredSkills: ['Java', 'Distributed Systems', 'Big Data'], skillGaps: ['Java', 'Big Data'] },
+    'Twitter': { role: 'Software Engineer', fitScore: 72, successProbability: 64, packageRange: { min: 16, max: 30 }, requiredSkills: ['Scala', 'Distributed Systems'], skillGaps: ['Scala'] },
+    'Spotify': { role: 'Backend Engineer', fitScore: 69, successProbability: 60, packageRange: { min: 15, max: 28 }, requiredSkills: ['Python', 'Microservices', 'Big Data'], skillGaps: ['Big Data'] },
+    'Atlassian': { role: 'Software Developer', fitScore: 67, successProbability: 58, packageRange: { min: 14, max: 26 }, requiredSkills: ['Java', 'Spring Boot', 'Microservices'], skillGaps: ['Spring Boot'] },
+    'Stripe': { role: 'Software Engineer', fitScore: 76, successProbability: 67, packageRange: { min: 18, max: 32 }, requiredSkills: ['Ruby', 'Scala', 'Distributed Systems'], skillGaps: ['Ruby', 'Scala'] },
+    'Shopify': { role: 'Full Stack Developer', fitScore: 68, successProbability: 59, packageRange: { min: 15, max: 27 }, requiredSkills: ['Ruby on Rails', 'React', 'GraphQL'], skillGaps: ['Ruby on Rails'] },
+    'PayPal': { role: 'Software Engineer', fitScore: 66, successProbability: 57, packageRange: { min: 14, max: 25 }, requiredSkills: ['Java', 'Node.js', 'Security'], skillGaps: ['Security'] },
+    'Snapchat': { role: 'Software Engineer', fitScore: 70, successProbability: 61, packageRange: { min: 16, max: 29 }, requiredSkills: ['Python', 'C++', 'Computer Vision'], skillGaps: ['C++', 'Computer Vision'] },
+    'VMware': { role: 'Software Engineer', fitScore: 64, successProbability: 56, packageRange: { min: 13, max: 24 }, requiredSkills: ['C++', 'Virtualization', 'Cloud'], skillGaps: ['C++', 'Virtualization'] }
+  };
+  
+  // Create ranked companies array based on user's target companies
+  const rankedCompanies = targetCompanies.map((companyName: string, index: number) => {
+    const companyData = allCompanies[companyName] || {
+      role: targetRoles[0] || 'Software Engineer',
+      fitScore: Math.max(50, 85 - index * 5),
+      successProbability: Math.max(45, 72 - index * 5),
+      packageRange: { min: 12 + index, max: 25 + index * 2 },
+      requiredSkills: ['Programming', 'Problem Solving'],
+      skillGaps: ['Advanced Topics']
+    };
+    
+    return {
+      id: `${index + 1}`,
+      name: companyName,
+      role: companyData.role,
+      fitScore: companyData.fitScore,
+      successProbability: companyData.successProbability,
+      packageRange: companyData.packageRange,
+      packageMin: companyData.packageRange.min,
+      packageMax: companyData.packageRange.max,
+      requiredSkills: companyData.requiredSkills,
+      matchedSkills: userSkills.slice(0, 3),
+      skillGaps: companyData.skillGaps,
+      minCGPA: 7.0,
+      hiringStatus: index < 3 ? 'Active' : 'Upcoming'
+    };
+  });
+  
+  // Create company probability map
+  const companyProbs: any = {};
+  targetCompanies.forEach((company: string, index: number) => {
+    companyProbs[company] = Math.max(55, 75 - index * 3);
+  });
+  
   return {
     placementSummary: {
-      placementProbability: 75.5,
-      highPackageProbability: 50.5,
-      overallPlacementProb: 0.755,
-      highPackageProb20LpaPlus: 0.505,
-      problemsSolved: 450,
-      totalProblemsSolved: 450,
-      currentStreak: 12,
+      placementProbability: 78.5,
+      highPackageProbability: 62.3,
+      overallPlacementProb: 0.785,
+      highPackageProb20LpaPlus: 0.623,
+      problemsSolved: 287,
+      totalProblemsSolved: 287,
+      currentStreak: 15,
       weeklyProgress: 85.0,
       consistencyScore: 78.5,
-      topSkills: skills.slice(0, 5).map(skill => ({
+      topSkills: userSkills.slice(0, 5).map((skill: string, i: number) => ({
         name: skill,
-        level: Math.floor(Math.random() * 30 + 60)
+        level: Math.max(70, 88 - i * 3)
       })),
+      companyProbs,
       lastUpdated: new Date().toISOString()
     },
     skillAnalytics: {
-      currentSkills: skills.map(skill => ({
-        name: skill,
-        current: Math.floor(Math.random() * 30 + 50),
-        target: Math.floor(Math.random() * 20 + 80),
-        proficiency: Math.floor(Math.random() * 30 + 60),
-        gap: Math.floor(Math.random() * 20)
-      })),
+      currentSkills: [
+        { name: 'Data Structures', current: 85, target: 95, proficiency: 85, gap: 10 },
+        { name: 'Algorithms', current: 82, target: 95, proficiency: 82, gap: 13 },
+        { name: 'System Design', current: 72, target: 90, proficiency: 72, gap: 18 },
+        { name: 'React', current: 88, target: 92, proficiency: 88, gap: 4 },
+        { name: 'Node.js', current: 80, target: 88, proficiency: 80, gap: 8 },
+        { name: 'TypeScript', current: 82, target: 90, proficiency: 82, gap: 8 },
+        { name: 'SQL', current: 75, target: 85, proficiency: 75, gap: 10 },
+        { name: 'MongoDB', current: 78, target: 86, proficiency: 78, gap: 8 },
+        { name: 'Python', current: 76, target: 84, proficiency: 76, gap: 8 },
+        { name: 'Behavioral', current: 70, target: 85, proficiency: 70, gap: 15 }
+      ],
       skillProgression: Array.from({ length: 6 }, (_, i) => {
-        const date = new Date();
-        date.setMonth(date.getMonth() - (5 - i));
         return {
-          date: date.toISOString().substring(0, 10),
-          week: `Week ${i + 1}`,
-          dsa: Math.floor(40 + i * 8),
-          systemDesign: Math.floor(30 + i * 7),
-          webDev: Math.floor(50 + i * 6),
-          skills: Math.floor(40 + i * 5)
+          week: i * 2,
+          date: new Date(Date.now() - (5 - i) * 14 * 24 * 60 * 60 * 1000).toISOString().substring(0, 10),
+          dsa: Math.floor(45 + i * 7),
+          csFundamentals: Math.floor(50 + i * 6),
+          systemDesign: Math.floor(30 + i * 8),
+          language: Math.floor(60 + i * 5),
+          behavioral: Math.floor(40 + i * 6)
         };
       }),
       history: Array.from({ length: 6 }, (_, i) => {
-        const date = new Date();
-        date.setMonth(date.getMonth() - (5 - i));
         return {
-          date: date.toISOString().substring(0, 10),
-          week: `Week ${i + 1}`,
-          dsa: Math.floor(40 + i * 8),
-          systemDesign: Math.floor(30 + i * 7),
-          webDev: Math.floor(50 + i * 6),
-          skills: Math.floor(40 + i * 5)
+          week: i * 2,
+          date: new Date(Date.now() - (5 - i) * 14 * 24 * 60 * 60 * 1000).toISOString().substring(0, 10),
+          dsa: Math.floor(45 + i * 7),
+          csFundamentals: Math.floor(50 + i * 6),
+          systemDesign: Math.floor(30 + i * 8),
+          language: Math.floor(60 + i * 5),
+          behavioral: Math.floor(40 + i * 6)
         };
       }),
-      weakAreas: ['System Design', 'Dynamic Programming', 'Graph Algorithms']
+      currentLevels: {
+        dsa: 85,
+        csFundamentals: 80,
+        systemDesign: 72,
+        language: 85,
+        behavioral: 70
+      },
+      targetLevels: {
+        dsa: 95,
+        csFundamentals: 92,
+        systemDesign: 90,
+        language: 90,
+        behavioral: 85
+      },
+      weakAreas: ['System Design', 'Dynamic Programming', 'Graph Algorithms', 'Behavioral Interviews']
     },
     companyMatches: {
-      totalMatches: 15,
-      highFitCount: 5,
-      maxPackage: 35,
-      rankedCompanies: [
-        { id: '1', name: 'Google', fitScore: 85, successProbability: 72, packageRange: { min: 20, max: 35 }, packageMin: 20, packageMax: 35, requiredSkills: ['Data Structures', 'Algorithms', 'System Design'], matchedSkills: ['JavaScript', 'React', 'Node.js'], skillGaps: ['System Design', 'Advanced Algorithms'], minCGPA: 7.5, hiringStatus: 'Active' },
-        { id: '2', name: 'Microsoft', fitScore: 82, successProbability: 75, packageRange: { min: 18, max: 32 }, packageMin: 18, packageMax: 32, requiredSkills: ['Cloud', 'Azure', 'C#'], matchedSkills: ['JavaScript', 'Python'], skillGaps: ['Cloud Computing', 'Azure'], minCGPA: 7.0, hiringStatus: 'Active' },
-        { id: '3', name: 'Amazon', fitScore: 78, successProbability: 68, packageRange: { min: 16, max: 30 }, packageMin: 16, packageMax: 30, requiredSkills: ['AWS', 'Distributed Systems'], matchedSkills: ['Data Structures', 'Algorithms'], skillGaps: ['AWS', 'Distributed Systems'], minCGPA: 7.0, hiringStatus: 'Active' },
-        { id: '4', name: 'Meta', fitScore: 75, successProbability: 65, packageRange: { min: 19, max: 34 }, packageMin: 19, packageMax: 34, requiredSkills: ['React', 'React Native', 'GraphQL'], matchedSkills: ['React', 'JavaScript'], skillGaps: ['React Native', 'GraphQL'], minCGPA: 7.5, hiringStatus: 'Upcoming' },
-        { id: '5', name: 'Apple', fitScore: 72, successProbability: 60, packageRange: { min: 17, max: 31 }, packageMin: 17, packageMax: 31, requiredSkills: ['Swift', 'iOS', 'Objective-C'], matchedSkills: ['JavaScript'], skillGaps: ['Swift', 'iOS', 'Objective-C'], minCGPA: 7.5, hiringStatus: 'Upcoming' },
-        { id: '6', name: 'Adobe', fitScore: 70, successProbability: 62, packageRange: { min: 15, max: 28 }, packageMin: 15, packageMax: 28, requiredSkills: ['JavaScript', 'React', 'Node.js'], matchedSkills: ['JavaScript', 'React'], skillGaps: ['Advanced UI/UX'], minCGPA: 7.0, hiringStatus: 'Active' },
-        { id: '7', name: 'Salesforce', fitScore: 68, successProbability: 58, packageRange: { min: 14, max: 26 }, packageMin: 14, packageMax: 26, requiredSkills: ['Apex', 'Salesforce Platform'], matchedSkills: ['JavaScript'], skillGaps: ['Salesforce', 'Apex'], minCGPA: 6.5, hiringStatus: 'Active' },
-        { id: '8', name: 'Oracle', fitScore: 65, successProbability: 55, packageRange: { min: 12, max: 24 }, packageMin: 12, packageMax: 24, requiredSkills: ['Java', 'SQL', 'Cloud'], matchedSkills: ['SQL'], skillGaps: ['Java', 'Oracle Cloud'], minCGPA: 6.5, hiringStatus: 'Upcoming' }
-      ],
-      companies: [
-        { id: '1', name: 'Google', fitScore: 85, successProbability: 72, packageRange: { min: 20, max: 35 }, packageMin: 20, packageMax: 35, requiredSkills: ['Data Structures', 'Algorithms', 'System Design'], matchedSkills: ['JavaScript', 'React', 'Node.js'], skillGaps: ['System Design', 'Advanced Algorithms'], minCGPA: 7.5, hiringStatus: 'Active' },
-        { id: '2', name: 'Microsoft', fitScore: 82, successProbability: 75, packageRange: { min: 18, max: 32 }, packageMin: 18, packageMax: 32, requiredSkills: ['Cloud', 'Azure', 'C#'], matchedSkills: ['JavaScript', 'Python'], skillGaps: ['Cloud Computing', 'Azure'], minCGPA: 7.0, hiringStatus: 'Active' },
-        { id: '3', name: 'Amazon', fitScore: 78, successProbability: 68, packageRange: { min: 16, max: 30 }, packageMin: 16, packageMax: 30, requiredSkills: ['AWS', 'Distributed Systems'], matchedSkills: ['Data Structures', 'Algorithms'], skillGaps: ['AWS', 'Distributed Systems'], minCGPA: 7.0, hiringStatus: 'Active' },
-        { id: '4', name: 'Meta', fitScore: 75, successProbability: 65, packageRange: { min: 19, max: 34 }, packageMin: 19, packageMax: 34, requiredSkills: ['React', 'React Native', 'GraphQL'], matchedSkills: ['React', 'JavaScript'], skillGaps: ['React Native', 'GraphQL'], minCGPA: 7.5, hiringStatus: 'Upcoming' },
-        { id: '5', name: 'Apple', fitScore: 72, successProbability: 60, packageRange: { min: 17, max: 31 }, packageMin: 17, packageMax: 31, requiredSkills: ['Swift', 'iOS', 'Objective-C'], matchedSkills: ['JavaScript'], skillGaps: ['Swift', 'iOS', 'Objective-C'], minCGPA: 7.5, hiringStatus: 'Upcoming' },
-        { id: '6', name: 'Adobe', fitScore: 70, successProbability: 62, packageRange: { min: 15, max: 28 }, packageMin: 15, packageMax: 28, requiredSkills: ['JavaScript', 'React', 'Node.js'], matchedSkills: ['JavaScript', 'React'], skillGaps: ['Advanced UI/UX'], minCGPA: 7.0, hiringStatus: 'Active' },
-        { id: '7', name: 'Salesforce', fitScore: 68, successProbability: 58, packageRange: { min: 14, max: 26 }, packageMin: 14, packageMax: 26, requiredSkills: ['Apex', 'Salesforce Platform'], matchedSkills: ['JavaScript'], skillGaps: ['Salesforce', 'Apex'], minCGPA: 6.5, hiringStatus: 'Active' },
-        { id: '8', name: 'Oracle', fitScore: 65, successProbability: 55, packageRange: { min: 12, max: 24 }, packageMin: 12, packageMax: 24, requiredSkills: ['Java', 'SQL', 'Cloud'], matchedSkills: ['SQL'], skillGaps: ['Java', 'Oracle Cloud'], minCGPA: 6.5, hiringStatus: 'Upcoming' }
-      ]
+      totalMatches: rankedCompanies.length,
+      highFitCount: rankedCompanies.filter((c: any) => c.fitScore > 75).length,
+      maxPackage: Math.max(...rankedCompanies.map((c: any) => c.packageMax)),
+      rankedCompanies,
+      companies: rankedCompanies
     },
     optimizationInsights: {
       timeReduction: 3.2,
@@ -133,8 +196,9 @@ export const getPlacementSummary = async (req: AuthRequest, res: Response) => {
     const dbAvailable = await isDatabaseAvailable();
 
     if (!dbAvailable) {
-      // Return mock data
-      const mockData = generateMockAnalytics(userId);
+      // Get user profile to use their data
+      const userProfile = mockProfiles[userId];
+      const mockData = generateMockAnalytics(userId, userProfile);
       return res.json(mockData.placementSummary);
     }
 
@@ -209,8 +273,9 @@ export const getSkillAnalytics = async (req: AuthRequest, res: Response) => {
     const dbAvailable = await isDatabaseAvailable();
 
     if (!dbAvailable) {
-      // Return mock data
-      const mockData = generateMockAnalytics(userId);
+      // Get user profile to use their data
+      const userProfile = mockProfiles[userId];
+      const mockData = generateMockAnalytics(userId, userProfile);
       return res.json(mockData.skillAnalytics);
     }
 
@@ -284,8 +349,9 @@ export const getCompanyMatches = async (req: AuthRequest, res: Response) => {
     const dbAvailable = await isDatabaseAvailable();
 
     if (!dbAvailable) {
-      // Return mock data
-      const mockData = generateMockAnalytics(userId);
+      // Get user profile to use their target companies
+      const userProfile = mockProfiles[userId];
+      const mockData = generateMockAnalytics(userId, userProfile);
       return res.json(mockData.companyMatches);
     }
 
@@ -296,8 +362,9 @@ export const getCompanyMatches = async (req: AuthRequest, res: Response) => {
     });
 
     if (matches.length === 0) {
-      // Return mock data if no matches
-      const mockData = generateMockAnalytics(userId);
+      // Get user profile to use their target companies
+      const profile = await prisma.profile.findUnique({ where: { userId } });
+      const mockData = generateMockAnalytics(userId, profile);
       return res.json(mockData.companyMatches);
     }
 

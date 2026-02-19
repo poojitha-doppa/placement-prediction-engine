@@ -70,48 +70,34 @@ export default function DashboardPage() {
   const skills = skillData;
   const companies = companyData;
 
-  // Check if profile is incomplete
-  const isProfileIncomplete = !profile?.name || !profile?.college || profile?.skills?.length === 0;
-  
-  if (isProfileIncomplete && !profileLoading) {
-    return (
-      <Box>
-        <Paper
-          elevation={0}
-          sx={{
-            p: 4,
-            textAlign: 'center',
-            maxWidth: 600,
-            mx: 'auto',
-            mt: 8,
-            border: `1px solid ${theme.palette.divider}`,
-          }}
-        >
-          <School sx={{ fontSize: 64, color: 'primary.main', mb: 2 }} />
-          <Typography variant="h5" gutterBottom fontWeight="bold">
-            Welcome! Let's Get Started
-          </Typography>
-          <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
-            To generate your personalized placement insights and roadmap, please complete your profile first.
-          </Typography>
-          <Button
-            variant="contained"
-            size="large"
-            onClick={() => navigate('/profile')}
-            sx={{ px: 4 }}
-          >
-            Complete Your Profile
-          </Button>
-        </Paper>
-      </Box>
-    );
-  }
+  // Show dashboard with data - no longer blocking on incomplete profile
+  // The profile is pre-populated with demo data
 
   const handleRefresh = () => {
     window.location.reload();
   };
 
-  const topCompanies = companies?.rankedCompanies.slice(0, 3) || [];
+  const topCompanies = (companies?.rankedCompanies || []).slice(0, 3);
+  
+  // Add console logging for debugging
+  console.log('Dashboard Data:', { profile, summary, skills, companies });
+  console.log('Loading States:', { profileLoading, summaryLoading, skillLoading, companyLoading });
+  
+  // Show loading state if any critical data is still loading
+  if (profileLoading || summaryLoading || skillLoading || companyLoading) {
+    return (
+      <Box sx={{ p: 4 }}>
+        <Typography variant="h4" gutterBottom>Loading Dashboard...</Typography>
+        <Grid container spacing={3} sx={{ mt: 2 }}>
+          {[1, 2, 3, 4].map((i) => (
+            <Grid item xs={12} sm={6} md={3} key={i}>
+              <Skeleton variant="rectangular" height={150} />
+            </Grid>
+          ))}
+        </Grid>
+      </Box>
+    );
+  }
 
   if (summaryError || skillError || companyError) {
     return (
@@ -407,24 +393,28 @@ export default function DashboardPage() {
                     }}
                   >
                     <Typography variant="h6" fontWeight="bold">
-                      {company.company}
+                      {company.name || company.company || 'Company'}
                     </Typography>
                     <Typography
                       variant="h6"
                       sx={{ color: theme.palette.success.main }}
                     >
-                      {(company.fitScore * 100).toFixed(0)}%
+                      {company.fitScore ? (company.fitScore >= 1 ? company.fitScore.toFixed(0) : (company.fitScore * 100).toFixed(0)) : 0}%
                     </Typography>
                   </Box>
                   <Typography variant="body2" color="text.secondary" gutterBottom>
-                    {company.role}
+                    {company.role || 'Software Engineer'}
                   </Typography>
                   <Box sx={{ my: 2 }}>
                     <Typography variant="caption" color="text.secondary">
                       Success Probability
                     </Typography>
                     <Typography variant="h6" fontWeight="bold">
-                      {(company.estimatedSuccessProb * 100).toFixed(0)}%
+                      {company.successProbability || company.estimatedSuccessProb 
+                        ? (company.successProbability >= 1 || (company.estimatedSuccessProb && company.estimatedSuccessProb >= 1)
+                          ? (company.successProbability || company.estimatedSuccessProb).toFixed(0)
+                          : ((company.successProbability || company.estimatedSuccessProb) * 100).toFixed(0))
+                        : 0}%
                     </Typography>
                   </Box>
                   <Box>
@@ -436,7 +426,7 @@ export default function DashboardPage() {
                       Key Gaps:
                     </Typography>
                     <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
-                      {company.keyGaps.slice(0, 2).map((gap: string, idx: number) => (
+                      {(company.skillGaps || company.keyGaps || []).slice(0, 2).map((gap: string, idx: number) => (
                         <Typography
                           key={idx}
                           variant="caption"

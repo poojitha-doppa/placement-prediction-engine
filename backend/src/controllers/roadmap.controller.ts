@@ -1,7 +1,8 @@
 import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth.js';
 import prisma from '../config/db.js';
-import { progressLogSchema } from '../utils/validation.js';
+import { progressLogSchema, roadmapPreferencesSchema } from '../utils/validation.js';
+import { mockProfiles } from './profile.controller.js';
 
 // Check if database is available
 const isDatabaseAvailable = async () => {
@@ -14,30 +15,152 @@ const isDatabaseAvailable = async () => {
   }
 };
 
-// Mock roadmap data
-const generateMockRoadmap = (userId: string) => {
-  const weeks = Array.from({ length: 16 }, (_, i) => ({
-    id: `week-${i + 1}`,
-    week: i + 1,
-    phase: i < 4 ? 'Foundation' : i < 8 ? 'Intermediate' : i < 12 ? 'Advanced' : 'Interview Prep',
-    focusAreas: ['Data Structures', 'Algorithms', 'Problem Solving'],
-    targets: [`Complete ${10 + i * 2} problems`, 'Review concepts', 'Practice coding'],
-    expectedOutcomes: ['Improved problem-solving', 'Better time complexity understanding'],
-    estimatedHours: 20,
-    progress: Math.floor(Math.random() * 100),
-    tasks: [
-      { id: `task-${i}-1`, title: 'Study core concepts', description: 'Review fundamental concepts', estimatedHours: 8, isCompleted: Math.random() > 0.5 },
-      { id: `task-${i}-2`, title: 'Solve practice problems', description: 'Complete problem sets', estimatedHours: 10, isCompleted: Math.random() > 0.5 },
-      { id: `task-${i}-3`, title: 'Mock interview', description: 'Practice with peers', estimatedHours: 2, isCompleted: Math.random() > 0.5 }
-    ]
-  }));
+// Store for roadmap preferences
+const roadmapPreferences: any = {};
+
+// Generate user summary from preferences
+const generateUserSummary = (preferences: any, userProfile: any) => {
+  const { learningPurpose, specificGoals, currentLevel, timePerDay, urgency, weakAreas, targetDate } = preferences;
+  
+  const levelDescriptions = {
+    beginner: 'starting their coding journey',
+    intermediate: 'with some programming experience',
+    advanced: 'with a strong technical foundation',
+    expert: 'who is interview-ready and seeking final polish'
+  };
+
+  const urgencyDescriptions = {
+    relaxed: 'prefers a steady, manageable pace',
+    moderate: 'aims for consistent progress',
+    urgent: 'needs accelerated learning due to tight deadlines'
+  };
+
+  const hoursPerWeek = timePerDay * 7;
+  const weeksAvailable = targetDate ? 
+    Math.max(1, Math.ceil((new Date(targetDate).getTime() - Date.now()) / (7 * 24 * 60 * 60 * 1000))) : 16;
+
+  const summary = `${userProfile?.name || 'The student'} is ${levelDescriptions[currentLevel as keyof typeof levelDescriptions]} ` +
+    `and ${urgencyDescriptions[urgency as keyof typeof urgencyDescriptions]}. ` +
+    `Their primary goal is: "${learningPurpose}". ` +
+    `They are targeting ${specificGoals.slice(0, 3).join(', ')}${specificGoals.length > 3 ? ', and more' : ''}. ` +
+    `With ${timePerDay} hours available daily (${hoursPerWeek} hours/week) over the next ${weeksAvailable} weeks, ` +
+    `they need focused attention on ${weakAreas.length > 0 ? weakAreas.slice(0, 3).join(', ') : 'comprehensive skill development'}. ` +
+    (targetDate ? `Timeline: Completion target by ${new Date(targetDate).toLocaleDateString()}.` : '');
+
+  return summary;
+};
+
+// Mock roadmap data with preferences
+const generateMockRoadmap = (userId: string, preferences?: any) => {
+  const userProfile = mockProfiles[userId] || {};
+  const prefs = preferences || roadmapPreferences[userId] || {};
+  
+  // Calculate intensity based on time and urgency
+  const timePerDay = prefs.timePerDay || 2;
+  const urgency = prefs.urgency || 'moderate';
+  const currentLevel = prefs.currentLevel || 'intermediate';
+  const weakAreas = prefs.weakAreas || [];
+  const specificGoals = prefs.specificGoals || [];
+  
+  const intensityMultiplier = urgency === 'urgent' ? 1.5 : urgency === 'relaxed' ? 0.7 : 1;
+  const problemsPerWeek = Math.floor(timePerDay * 5 * intensityMultiplier);
+  const hoursPerWeek = timePerDay * 7;
+  
+  // Define phase focus based on user level and weak areas
+  const getPhaseFocus = (weekNum: number) => {
+    if (currentLevel === 'beginner') {
+      if (weekNum <= 4) return { phase: 'Foundation', areas: ['Arrays', 'Strings', 'Basic Math', 'Sorting'] };
+      if (weekNum <= 8) return { phase: 'Core DSA', areas: ['LinkedList', 'Stacks', 'Queues', 'Recursion'] };
+      if (weekNum <= 12) return { phase: 'Intermediate', areas: ['Trees', 'Hashing', 'Binary Search', 'Graphs'] };
+      return { phase: 'Interview Prep', areas: ['Dynamic Programming', 'Mock Interviews', 'System Design Basics'] };
+    } else if (currentLevel === 'intermediate') {
+      if (weekNum <= 4) return { phase: 'DSA Mastery', areas: ['Advanced Trees', 'Graphs', 'DP Patterns'] };
+      if (weekNum <= 8) return { phase: 'Problem Solving', areas: ['Greedy', 'Backtracking', 'Bit Manipulation'] };
+      if (weekNum <= 12) return { phase: 'System Design', areas: ['LLD', 'HLD', 'Scalability', 'Databases'] };
+      return { phase: 'Mock & Polish', areas: ['Company-Specific', 'Behavioral', 'Final Prep'] };
+    } else {
+      if (weekNum <= 4) return { phase: 'Advanced Topics', areas: ['Complex DP', 'Graph Algorithms', 'Advanced DS'] };
+      if (weekNum <= 8) return { phase: 'System Design Deep-Dive', areas: ['Distributed Systems', 'Scalability', 'Real Projects'] };
+      if (weekNum <= 12) return { phase: 'Company Prep', areas: ['Company-Specific Patterns', 'Product Design'] };
+      return { phase: 'Final Sprint', areas: ['Mock Interviews', 'Resume', 'Negotiations'] };
+    }
+  };
+
+  // Generate personalized weeks
+  const weeks = Array.from({ length: 16 }, (_, i) => {
+    const weekNum = i + 1;
+    const phaseFocus = getPhaseFocus(weekNum);
+    
+    // Include weak areas in early weeks
+    const focusAreas = weekNum <= 8 && weakAreas.length > 0 
+      ? [...phaseFocus.areas.slice(0, 2), ...weakAreas.slice(0, 2)]
+      : phaseFocus.areas;
+
+    // Generate targets based on goals
+    const targets = [
+      `Solve ${problemsPerWeek + weekNum} problems`,
+      ...specificGoals.slice(0, 2).map(goal => `Progress on: ${goal}`),
+      'Complete all assigned tasks',
+      'Review and revise concepts'
+    ];
+
+    return {
+      id: `week-${weekNum}`,
+      week: weekNum,
+      phase: phaseFocus.phase,
+      focusAreas: focusAreas.slice(0, 4),
+      targets: targets.slice(0, 5),
+      expectedOutcomes: [
+        'Strengthen problem-solving skills',
+        'Master key concepts',
+        weekNum % 4 === 0 ? 'Complete phase milestone' : 'Build momentum'
+      ],
+      estimatedHours: Math.round(hoursPerWeek),
+      progress: 0,
+      tasks: [
+        { 
+          id: `task-${weekNum}-1`, 
+          title: `Master ${focusAreas[0] || 'Core Concepts'}`, 
+          description: 'Deep dive into theory and practice', 
+          estimatedHours: Math.round(hoursPerWeek * 0.4), 
+          isCompleted: false 
+        },
+        { 
+          id: `task-${weekNum}-2`, 
+          title: `Solve ${problemsPerWeek} problems`, 
+          description: 'Practice problems on focused topics', 
+          estimatedHours: Math.round(hoursPerWeek * 0.5), 
+          isCompleted: false 
+        },
+        { 
+          id: `task-${weekNum}-3`, 
+          title: 'Review and document learnings', 
+          description: 'Consolidate knowledge and track progress', 
+          estimatedHours: Math.round(hoursPerWeek * 0.1), 
+          isCompleted: false 
+        }
+      ]
+    };
+  });
+
+  // Generate summary if preferences exist
+  const summary = prefs.learningPurpose ? generateUserSummary(prefs, userProfile) : null;
 
   return {
     id: 'mock-roadmap',
     durationWeeks: 16,
-    overallProgress: weeks.reduce((sum, w) => sum + w.progress, 0) / weeks.length,
-    globalNotes: ['Stay consistent', 'Focus on weak areas', 'Practice daily'],
-    weeklyPlan: weeks
+    overallProgress: 0,
+    overallCompletion: 0,
+    generatedAt: new Date().toISOString(),
+    userSummary: summary,
+    globalNotes: [
+      'Stay consistent with daily practice',
+      `Dedicate ${timePerDay} hours daily`,
+      urgency === 'urgent' ? 'Maintain high intensity - deadline approaching!' : 'Pace yourself and avoid burnout',
+      ...specificGoals.slice(0, 2)
+    ],
+    weeklyPlan: weeks,
+    preferences: prefs
   };
 };
 
@@ -46,8 +169,9 @@ export const getRoadmap = async (req: AuthRequest, res: Response) => {
     const dbAvailable = await isDatabaseAvailable();
 
     if (!dbAvailable) {
-      // Return mock roadmap
-      return res.json(generateMockRoadmap(req.user.id));
+      // Return mock roadmap with user preferences
+      const preferences = roadmapPreferences[req.user.id];
+      return res.json(generateMockRoadmap(req.user.id, preferences));
     }
 
     const roadmap = await prisma.roadmap.findFirst({
@@ -225,5 +349,60 @@ export const getProgressHistory = async (req: AuthRequest, res: Response) => {
   } catch (error) {
     console.error('Get progress history error:', error);
     res.status(500).json({ error: 'Failed to fetch progress history' });
+  }
+};
+
+export const saveRoadmapPreferences = async (req: AuthRequest, res: Response) => {
+  try {
+    console.log('📝 Saving roadmap preferences');
+    console.log('User ID:', req.user.id);
+    console.log('Preferences:', JSON.stringify(req.body, null, 2));
+
+    const validatedData = roadmapPreferencesSchema.parse(req.body);
+    
+    // Store preferences in memory (in mock mode)
+    roadmapPreferences[req.user.id] = validatedData;
+    
+    // Generate user summary
+    const userProfile = mockProfiles[req.user.id] || {};
+    const summary = generateUserSummary(validatedData, userProfile);
+    
+    console.log('✅ Preferences saved');
+    console.log('User Summary:', summary);
+
+    res.json({
+      message: 'Preferences saved successfully',
+      summary: summary,
+      preferences: validatedData
+    });
+  } catch (error: any) {
+    console.error('❌ Save preferences error:', error);
+    if (error.name === 'ZodError') {
+      console.error('Validation errors:', error.errors);
+      return res.status(400).json({ error: 'Invalid input', details: error.errors });
+    }
+    res.status(500).json({ error: 'Failed to save preferences' });
+  }
+};
+
+export const getRoadmapPreferences = async (req: AuthRequest, res: Response) => {
+  try {
+    const preferences = roadmapPreferences[req.user.id];
+    
+    if (!preferences) {
+      return res.status(404).json({ error: 'No preferences found', hasPreferences: false });
+    }
+
+    const userProfile = mockProfiles[req.user.id] || {};
+    const summary = generateUserSummary(preferences, userProfile);
+
+    res.json({
+      hasPreferences: true,
+      preferences,
+      summary
+    });
+  } catch (error) {
+    console.error('Get preferences error:', error);
+    res.status(500).json({ error: 'Failed to fetch preferences' });
   }
 };

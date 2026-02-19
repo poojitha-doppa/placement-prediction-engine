@@ -48,11 +48,18 @@ const getStoredProfile = (): StudentProfile => {
 export const mockStudentProfile: StudentProfile = getStoredProfile();
 
 export const mockPlacementSummary: PlacementSummary = {
-  overallPlacementProb: 0,
-  highPackageProb20LpaPlus: 0,
-  companyProbs: {},
-  totalProblemsSolved: 0,
-  currentStreak: 0,
+  overallPlacementProb: 78,
+  highPackageProb20LpaPlus: 62,
+  companyProbs: {
+    'Google': 68,
+    'Microsoft': 72,
+    'Amazon': 75,
+    'Meta': 65,
+    'Apple': 58,
+    'Netflix': 55
+  },
+  totalProblemsSolved: 287,
+  currentStreak: 15,
   lastUpdated: new Date().toISOString(),
 };
 

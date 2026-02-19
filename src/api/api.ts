@@ -122,6 +122,16 @@ export const roadmapApi = {
     });
     return data;
   },
+
+  savePreferences: async (preferences: any) => {
+    const { data } = await api.post('/api/roadmap/preferences', preferences);
+    return data;
+  },
+
+  getPreferences: async () => {
+    const { data } = await api.get('/api/roadmap/preferences');
+    return data;
+  },
 };
 
 // Analytics APIs

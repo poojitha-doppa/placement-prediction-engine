@@ -35,7 +35,30 @@ export default function ProfilePage() {
   const [newCompany, setNewCompany] = useState('');
   const [newRole, setNewRole] = useState('');
   const [showSuccess, setShowSuccess] = useState(false);
-  const [formData, setFormData] = useState<Partial<StudentProfile>>({});
+  const [isSaving, setIsSaving] = useState(false);
+  const [formData, setFormData] = useState<Partial<StudentProfile>>({
+    name: '',
+    email: '',
+    college: '',
+    branch: '',
+    graduationYear: new Date().getFullYear() + 1,
+    cgpa: 0,
+    skills: [],
+    leetcodeSolved: 0,
+    githubUrl: '',
+    leetcodeUrl: '',
+    resumeUrl: '',
+    targets: {
+      companies: [],
+      roles: [],
+      minPackageLPA: 0,
+    },
+    integrationStatus: {
+      github: 'not-connected',
+      leetcode: 'not-connected',
+      resume: 'not-uploaded',
+    },
+  });
 
   // Fetch profile data
   const {
@@ -44,18 +67,41 @@ export default function ProfilePage() {
     error,
   } = useQuery({
     queryKey: ['studentProfile'],
-    queryFn: () => api.getStudentProfile(),
+    queryFn: () => profileApi.getProfile(),
   });
 
   // Set form data when profile loads
   useEffect(() => {
-    if (profileData?.data) {
+    console.log('Profile data received:', profileData);
+    if (profileData) {
+      // Transform backend data format to frontend format
       setFormData({
-        ...profileData.data,
-        name: profileData.data.name || user?.name || '',
-        email: profileData.data.email || user?.email || '',
+        id: profileData.id,
+        name: profileData.name || user?.name || '',
+        email: profileData.email || user?.email || '',
+        college: profileData.college || '',
+        branch: profileData.branch || '',
+        graduationYear: profileData.year || new Date().getFullYear() + 1,
+        cgpa: profileData.cgpa || 0,
+        skills: profileData.skills || [],
+        leetcodeSolved: profileData.leetcodeSolved || 0,
+        githubUrl: profileData.githubUsername ? `https://github.com/${profileData.githubUsername}` : '',
+        leetcodeUrl: profileData.leetcodeUsername ? `https://leetcode.com/${profileData.leetcodeUsername}` : '',
+        resumeUrl: profileData.resumeUrl || '',
+        targets: {
+          companies: profileData.targetCompanies || [],
+          roles: profileData.targetRoles || [],
+          minPackageLPA: profileData.minPackageLPA || 0,
+        },
+        integrationStatus: {
+          github: profileData.githubUsername ? 'connected' : 'not-connected',
+          leetcode: profileData.leetcodeUsername ? 'connected' : 'not-connected',
+          resume: profileData.resumeUrl ? 'uploaded' : 'not-uploaded',
+        },
       });
+      console.log('Form data set');
     } else if (user && !isLoading) {
+      console.log('Setting default form data from user');
       setFormData((prev) => ({
         ...prev,
         name: user.name,
@@ -64,19 +110,7 @@ export default function ProfilePage() {
     }
   }, [profileData, user, isLoading]);
 
-  // Update profile mutation
-  const updateMutation = useMutation({
-    mutationFn: (data: Partial<StudentProfile>) =>
-      api.updateStudentProfile(data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['studentProfile'] });
-      queryClient.invalidateQueries({ queryKey: ['placementSummary'] });
-      queryClient.invalidateQueries({ queryKey: ['companyMatches'] });
-      setShowSuccess(true);
-    },
-  });
-
-  const profile = profileData?.data;
+  const profile = profileData;
 
   const handleInputChange = (field: keyof StudentProfile, value: any) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
@@ -198,7 +232,42 @@ export default function ProfilePage() {
       alert('Please fill in all required fields (Name, College, Branch)');
       return;
     }
-    updateMutation.mutate(formData);
+    
+    setIsSaving(true);
+    
+    // Transform data to match backend API format
+    const dataToSend = {
+      name: formData.name,
+      college: formData.college,
+      branch: formData.branch,
+      year: formData.graduationYear,
+      cgpa: formData.cgpa,
+      skills: formData.skills || [],
+      targetCompanies: formData.targets?.companies || [],
+      targetRoles: formData.targets?.roles || [],
+      availableHoursPerWeek: 20, // default value
+      githubUsername: formData.githubUrl?.split('/').pop() || null,
+      leetcodeUsername: formData.leetcodeUrl?.split('/').pop() || null,
+      codeforcesUsername: null
+    };
+    
+    console.log('Sending profile update:', dataToSend);
+    
+    // Use profileApi instead of mockApi for real backend calls
+    profileApi.updateProfile(dataToSend).then((response) => {
+      console.log('Profile update successful:', response);
+      queryClient.invalidateQueries({ queryKey: ['studentProfile'] });
+      queryClient.invalidateQueries({ queryKey: ['placementSummary'] });
+      queryClient.invalidateQueries({ queryKey: ['companyMatches'] });
+      setShowSuccess(true);
+      setIsSaving(false);
+    }).catch((error) => {
+      console.error('Update error:', error);
+      console.error('Error response:', error.response?.data);
+      const errorMsg = error.response?.data?.error || error.message || 'Unknown error';
+      alert(`Failed to update profile: ${errorMsg}`);
+      setIsSaving(false);
+    });
   };
 
   const getStatusColor = (
@@ -220,17 +289,21 @@ export default function ProfilePage() {
         }}
       >
         <CircularProgress />
+        <Typography sx={{ ml: 2 }}>Loading profile...</Typography>
       </Box>
     );
   }
 
   if (error) {
+    console.error('Profile error:', error);
     return (
       <Alert severity="error" sx={{ mt: 2 }}>
-        Failed to load profile. Please try again.
+        Failed to load profile. Please try again. Error: {String(error)}
       </Alert>
     );
   }
+  
+  console.log('Rendering profile with formData:', formData);
 
   return (
     <Box>
@@ -613,9 +686,9 @@ export default function ProfilePage() {
           variant="contained"
           size="large"
           onClick={handleSave}
-          disabled={updateMutation.isPending}
+          disabled={isSaving}
         >
-          {updateMutation.isPending ? <CircularProgress size={24} /> : 'Save Changes'}
+          {isSaving ? <CircularProgress size={24} /> : 'Save Changes'}
         </Button>
       </Box>
 

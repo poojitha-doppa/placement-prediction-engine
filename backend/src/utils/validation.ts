@@ -15,15 +15,15 @@ export const profileUpdateSchema = z.object({
   name: z.string().optional(),
   college: z.string().optional(),
   branch: z.string().optional(),
-  year: z.number().int().min(1).max(5).optional(),
+  year: z.number().int().min(2020).max(2030).optional(), // Graduation year
   cgpa: z.number().min(0).max(10).optional(),
   skills: z.array(z.string()).optional(),
   targetCompanies: z.array(z.string()).optional(),
   targetRoles: z.array(z.string()).optional(),
   availableHoursPerWeek: z.number().int().min(1).max(80).optional(),
-  githubUsername: z.string().optional(),
-  leetcodeUsername: z.string().optional(),
-  codeforcesUsername: z.string().optional()
+  githubUsername: z.string().nullable().optional(),
+  leetcodeUsername: z.string().nullable().optional(),
+  codeforcesUsername: z.string().nullable().optional()
 });
 
 export const progressLogSchema = z.object({
@@ -60,3 +60,16 @@ export const insightSchema = z.object({
 });
 
 export const insightsResponseSchema = z.array(insightSchema).min(1).max(10);
+
+export const roadmapPreferencesSchema = z.object({
+  learningPurpose: z.string().min(10),
+  specificGoals: z.array(z.string()).min(1),
+  currentLevel: z.enum(['beginner', 'intermediate', 'advanced', 'expert']),
+  timePerDay: z.number().min(0.5).max(24),
+  timePerWeek: z.number().min(1).max(168),
+  learningStyle: z.enum(['visual', 'reading', 'practical', 'mixed']),
+  targetDate: z.string().optional(),
+  urgency: z.enum(['relaxed', 'moderate', 'urgent']),
+  weakAreas: z.array(z.string()),
+  additionalNotes: z.string().optional()
+});

@@ -39,6 +39,27 @@ const LoginPage: React.FC = () => {
   const { login, register } = useAuth();
   const navigate = useNavigate();
 
+  // Clear any expired tokens on mount
+  React.useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (token) {
+      // Try to decode the token to check if it's expired
+      try {
+        const payload = JSON.parse(atob(token.split('.')[1]));
+        const expired = payload.exp * 1000 < Date.now();
+        if (expired) {
+          console.log('Clearing expired token');
+          localStorage.removeItem('token');
+          localStorage.removeItem('placement_user');
+        }
+      } catch {
+        // If we can't decode, clear it anyway
+        localStorage.removeItem('token');
+        localStorage.removeItem('placement_user');
+      }
+    }
+  }, []);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -154,6 +175,34 @@ const LoginPage: React.FC = () => {
           {error && (
             <Alert severity="error" sx={{ mb: 2 }}>
               {error}
+            </Alert>
+          )}
+
+          {/* Demo Credentials Alert - Only show on Login tab */}
+          {tabValue === 0 && (
+            <Alert 
+              severity="info" 
+              sx={{ mb: 2 }}
+              action={
+                <Button
+                  color="inherit"
+                  size="small"
+                  onClick={() => {
+                    setEmail('poojithadoppa8@gmail.com');
+                    setPassword('Poojitha@2006');
+                  }}
+                >
+                  Auto-fill
+                </Button>
+              }
+            >
+              <Typography variant="body2" fontWeight="bold">
+                Demo Credentials
+              </Typography>
+              <Typography variant="body2">
+                Email: poojithadoppa8@gmail.com<br />
+                Password: Poojitha@2006
+              </Typography>
             </Alert>
           )}
 
