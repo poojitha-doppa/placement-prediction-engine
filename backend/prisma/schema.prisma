@@ -43,6 +43,9 @@ model Profile {
   leetcodeSolved        Int      @default(0)
   minPackageLPA         Float?
   
+  parsedResume          Json?
+  combinedSkills        String[]
+  
   updatedAt             DateTime @updatedAt
 }
 

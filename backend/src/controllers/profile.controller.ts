@@ -2,6 +2,13 @@ import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth.js';
 import prisma from '../config/db.js';
 import { profileUpdateSchema } from '../utils/validation.js';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { extractResumeText } from '../services/resumeExtractor.service.js';
+import { parseResumeWithLLM, mergeSkills, ParsedResumeData } from '../services/resumeParser.service.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // In-memory profile store for mock mode - exported for use in analytics
 export const mockProfiles: any = {};
@@ -304,34 +311,183 @@ export const updateProfile = async (req: AuthRequest, res: Response) => {
 
 export const uploadResume = async (req: AuthRequest, res: Response) => {
   try {
+    console.log('📤 Resume upload request received');
+    
     if (!req.file) {
       return res.status(400).json({ error: 'No file uploaded' });
     }
 
+    // Get file path
+    const filePath = req.file.path;
     const resumeUrl = `/uploads/resumes/${req.file.filename}`;
-    const dbAvailable = await isDatabaseAvailable();
+    
+    console.log(`📁 File uploaded: ${req.file.filename}`);
+    console.log(`📏 File size: ${(req.file.size / 1024).toFixed(2)} KB`);
 
+    const dbAvailable = await isDatabaseAvailable();
+    
+    // Step 1: Extract text from resume
+    console.log('🔍 Step 1: Extracting text from resume...');
+    let extractedText: string;
+    try {
+      extractedText = await extractResumeText(filePath);
+      console.log(`✅ Text extracted: ${extractedText.length} characters`);
+    } catch (extractError: any) {
+      console.error('❌ Text extraction failed:', extractError.message);
+      // Continue without parsing if extraction fails
+      if (dbAvailable) {
+        await prisma.profile.update({
+          where: { userId: req.user.id },
+          data: { resumeUrl }
+        });
+      } else {
+        const currentProfile = mockProfiles[req.user.id] || {};
+        mockProfiles[req.user.id] = {
+          ...currentProfile,
+          resumeUrl
+        };
+      }
+      return res.json({
+        message: 'Resume uploaded successfully (parsing failed)',
+        resumeUrl,
+        warning: 'Could not extract text from resume. File saved but not parsed.'
+      });
+    }
+
+    // Step 2: Parse resume with LLM
+    console.log('🤖 Step 2: Parsing resume with LLM...');
+    let parsedData: ParsedResumeData;
+    try {
+      parsedData = await parseResumeWithLLM(extractedText);
+      console.log('✅ Resume parsed successfully');
+      console.log(`📊 Parsed data: ${parsedData.skills.length} skills, ${parsedData.projects.length} projects`);
+    } catch (parseError: any) {
+      console.error('❌ LLM parsing failed:', parseError.message);
+      // Continue without parsed data if parsing fails
+      if (dbAvailable) {
+        await prisma.profile.update({
+          where: { userId: req.user.id },
+          data: { resumeUrl }
+        });
+      } else {
+        const currentProfile = mockProfiles[req.user.id] || {};
+        mockProfiles[req.user.id] = {
+          ...currentProfile,
+          resumeUrl
+        };
+      }
+      return res.json({
+        message: 'Resume uploaded successfully (parsing failed)',
+        resumeUrl,
+        warning: 'Could not parse resume content. File saved but data not extracted.'
+      });
+    }
+
+    // Step 3: Update database with parsed data
+    console.log('💾 Step 3: Saving to database...');
+    
     if (dbAvailable) {
-      // Database mode
-      await prisma.profile.update({
+      // Get existing profile to merge skills
+      const existingProfile = await prisma.profile.findUnique({
+        where: { userId: req.user.id }
+      });
+
+      const existingSkills = existingProfile?.skills || [];
+      
+      // Merge skills
+      const combinedSkills = mergeSkills(
+        existingSkills,
+        parsedData.skills,
+        parsedData.programming_languages
+      );
+
+      // Update profile with resume data
+      const updatedProfile = await prisma.profile.update({
         where: { userId: req.user.id },
-        data: { resumeUrl }
+        data: {
+          resumeUrl,
+          parsedResume: parsedData as any,
+          combinedSkills,
+          // Update name and email if empty
+          ...(existingProfile?.user && !existingProfile.user.name && parsedData.full_name 
+            ? {} 
+            : {})
+        }
+      });
+      
+      // Update user name and email if provided and empty
+      if (parsedData.full_name || parsedData.email) {
+        const user = await prisma.user.findUnique({ where: { id: req.user.id } });
+        const updateData: any = {};
+        
+        if (parsedData.full_name && !user?.name) {
+          updateData.name = parsedData.full_name;
+        }
+        
+        if (Object.keys(updateData).length > 0) {
+          await prisma.user.update({
+            where: { id: req.user.id },
+            data: updateData
+          });
+          console.log('✅ Updated user profile with parsed data');
+        }
+      }
+
+      console.log('✅ Database updated successfully');
+      
+      res.json({
+        message: 'Resume uploaded and parsed successfully',
+        resumeUrl,
+        parsedData: {
+          full_name: parsedData.full_name,
+          email: parsedData.email,
+          phone: parsedData.phone,
+          skills_count: parsedData.skills.length,
+          projects_count: parsedData.projects.length,
+          education_count: parsedData.education.length,
+          combined_skills_count: combinedSkills.length
+        }
       });
     } else {
       // Mock mode
       const currentProfile = mockProfiles[req.user.id] || {};
+      const existingSkills = currentProfile.skills || [];
+      
+      const combinedSkills = mergeSkills(
+        existingSkills,
+        parsedData.skills,
+        parsedData.programming_languages
+      );
+      
       mockProfiles[req.user.id] = {
         ...currentProfile,
-        resumeUrl
+        resumeUrl,
+        parsedResume: parsedData,
+        combinedSkills
       };
+      
+      console.log('✅ Mock profile updated successfully');
+      
+      res.json({
+        message: 'Resume uploaded and parsed successfully (mock mode)',
+        resumeUrl,
+        parsedData: {
+          full_name: parsedData.full_name,
+          email: parsedData.email,
+          phone: parsedData.phone,
+          skills_count: parsedData.skills.length,
+          projects_count: parsedData.projects.length,
+          education_count: parsedData.education.length,
+          combined_skills_count: combinedSkills.length
+        }
+      });
     }
-
-    res.json({
-      message: 'Resume uploaded successfully',
-      resumeUrl
+  } catch (error: any) {
+    console.error('❌ Upload resume error:', error);
+    console.error('Error stack:', error.stack);
+    res.status(500).json({ 
+      error: 'Failed to upload resume',
+      details: error.message 
     });
-  } catch (error) {
-    console.error('Upload resume error:', error);
-    res.status(500).json({ error: 'Failed to upload resume' });
   }
 };
