@@ -14,9 +14,11 @@ export const mockUsersCache: { users: any[] } = { users: [] };
 const isDatabaseAvailable = async () => {
   try {
     if (!prisma) return false;
-    await prisma.$queryRaw`SELECT 1`;
+    await prisma.$connect();
+    await prisma.user.findFirst();
     return true;
-  } catch {
+  } catch (error: any) {
+    console.log('⚠️  Auth middleware: Database not available');
     return false;
   }
 };
@@ -40,16 +42,19 @@ export const authenticateJWT = async (
     
     if (dbAvailable) {
       // Database mode - fetch user from DB
+      console.log(`🔍 Looking up user in database: ${decoded.sub}`);
       const user = await prisma.user.findUnique({
         where: { id: decoded.sub },
         select: { id: true, email: true, name: true }
       });
 
       if (!user) {
+        console.error(`❌ User not found in database: ${decoded.sub}`);
         return res.status(401).json({ error: 'User not found' });
       }
 
       req.user = user;
+      console.log(`✅ Auth successful (DB): ${user.name} (${user.email})`);
     } else {
       // Mock mode - fetch from mock users cache
       const mockUser = mockUsersCache.users.find(u => u.id === decoded.sub);

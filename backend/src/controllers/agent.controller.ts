@@ -8,7 +8,8 @@ import { roadmapSchema, insightsResponseSchema } from '../utils/validation.js';
 const isDatabaseAvailable = async () => {
   try {
     if (!prisma) return false;
-    await prisma.$queryRaw`SELECT 1`;
+    await prisma.$connect();
+    await prisma.user.findFirst();
     return true;
   } catch {
     return false;

@@ -178,34 +178,6 @@ const LoginPage: React.FC = () => {
             </Alert>
           )}
 
-          {/* Demo Credentials Alert - Only show on Login tab */}
-          {tabValue === 0 && (
-            <Alert 
-              severity="info" 
-              sx={{ mb: 2 }}
-              action={
-                <Button
-                  color="inherit"
-                  size="small"
-                  onClick={() => {
-                    setEmail('poojithadoppa8@gmail.com');
-                    setPassword('Poojitha@2006');
-                  }}
-                >
-                  Auto-fill
-                </Button>
-              }
-            >
-              <Typography variant="body2" fontWeight="bold">
-                Demo Credentials
-              </Typography>
-              <Typography variant="body2">
-                Email: poojithadoppa8@gmail.com<br />
-                Password: Poojitha@2006
-              </Typography>
-            </Alert>
-          )}
-
           {/* Form */}
           <form onSubmit={handleSubmit}>
             {tabValue === 1 && (

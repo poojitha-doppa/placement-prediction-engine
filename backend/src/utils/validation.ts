@@ -23,7 +23,9 @@ export const profileUpdateSchema = z.object({
   availableHoursPerWeek: z.number().int().min(1).max(80).optional(),
   githubUsername: z.string().nullable().optional(),
   leetcodeUsername: z.string().nullable().optional(),
-  codeforcesUsername: z.string().nullable().optional()
+  codeforcesUsername: z.string().nullable().optional(),
+  leetcodeSolved: z.number().int().min(0).optional(),
+  minPackageLPA: z.number().min(0).optional()
 });
 
 export const progressLogSchema = z.object({

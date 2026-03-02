@@ -36,10 +36,16 @@ initializeDefaultUser();
 // Check if database is available
 const isDatabaseAvailable = async () => {
   try {
-    if (!prisma) return false;
-    await prisma.$queryRaw`SELECT 1`;
+    if (!prisma) {
+      console.log('⚠️  Prisma client not initialized');
+      return false;
+    }
+    // Use a MongoDB-compatible operation instead of SQL
+    await prisma.$connect();
+    await prisma.user.findFirst();
     return true;
-  } catch {
+  } catch (error: any) {
+    console.log('⚠️  Database not available:', error.message);
     return false;
   }
 };

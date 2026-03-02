@@ -248,7 +248,9 @@ export default function ProfilePage() {
       availableHoursPerWeek: 20, // default value
       githubUsername: formData.githubUrl?.split('/').pop() || null,
       leetcodeUsername: formData.leetcodeUrl?.split('/').pop() || null,
-      codeforcesUsername: null
+      codeforcesUsername: null,
+      leetcodeSolved: formData.leetcodeSolved || 0,
+      minPackageLPA: formData.targets?.minPackageLPA || 0
     };
     
     console.log('Sending profile update:', dataToSend);

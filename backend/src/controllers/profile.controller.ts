@@ -33,10 +33,19 @@ initializeDefaultProfile();
 // Check if database is available
 const isDatabaseAvailable = async () => {
   try {
-    if (!prisma) return false;
-    await prisma.$queryRaw`SELECT 1`;
+    if (!prisma) {
+      console.log('⚠️  Prisma client not initialized');
+      return false;
+    }
+    // Use a MongoDB-compatible ping instead of SQL
+    await prisma.$connect();
+    // Try to access the database
+    await prisma.user.findFirst();
+    console.log('✅ Database is available and connected');
     return true;
-  } catch {
+  } catch (error: any) {
+    console.log('⚠️  Database not available:', error.message);
+    console.log('   Using mock mode instead');
     return false;
   }
 };
@@ -47,7 +56,9 @@ export const getProfile = async (req: AuthRequest, res: Response) => {
 
     if (dbAvailable) {
       // Database mode
-      const profile = await prisma.profile.findUnique({
+      console.log(`📖 Fetching profile for user: ${req.user.id}`);
+      
+      let profile = await prisma.profile.findUnique({
         where: { userId: req.user.id },
         include: {
           user: {
@@ -60,10 +71,31 @@ export const getProfile = async (req: AuthRequest, res: Response) => {
         }
       });
 
+      // If profile doesn't exist, create it with defaults
       if (!profile) {
-        return res.status(404).json({ error: 'Profile not found' });
+        console.log('📝 Profile not found, creating new profile with defaults');
+        profile = await prisma.profile.create({
+          data: {
+            userId: req.user.id,
+            skills: [],
+            targetCompanies: [],
+            targetRoles: [],
+            availableHoursPerWeek: 10
+          },
+          include: {
+            user: {
+              select: {
+                id: true,
+                email: true,
+                name: true
+              }
+            }
+          }
+        });
       }
 
+      console.log('✅ Profile fetched successfully');
+      
       res.json({
         id: profile.id,
         name: profile.user.name,
@@ -79,7 +111,9 @@ export const getProfile = async (req: AuthRequest, res: Response) => {
         resumeUrl: profile.resumeUrl,
         githubUsername: profile.githubUsername,
         leetcodeUsername: profile.leetcodeUsername,
-        codeforcesUsername: profile.codeforcesUsername
+        codeforcesUsername: profile.codeforcesUsername,
+        leetcodeSolved: profile.leetcodeSolved,
+        minPackageLPA: profile.minPackageLPA
       });
     } else {
       // Mock mode - return complete profile with demo data
@@ -133,6 +167,8 @@ export const updateProfile = async (req: AuthRequest, res: Response) => {
 
     if (dbAvailable) {
       // Database mode
+      console.log('💾 Updating in database mode');
+      
       if (validatedData.name) {
         await prisma.user.update({
           where: { id: req.user.id },
@@ -140,9 +176,10 @@ export const updateProfile = async (req: AuthRequest, res: Response) => {
         });
       }
 
-      const profile = await prisma.profile.update({
+      // Use upsert to create profile if it doesn't exist or update if it does
+      const profile = await prisma.profile.upsert({
         where: { userId: req.user.id },
-        data: {
+        update: {
           college: validatedData.college,
           branch: validatedData.branch,
           year: validatedData.year,
@@ -153,7 +190,25 @@ export const updateProfile = async (req: AuthRequest, res: Response) => {
           availableHoursPerWeek: validatedData.availableHoursPerWeek,
           githubUsername: validatedData.githubUsername,
           leetcodeUsername: validatedData.leetcodeUsername,
-          codeforcesUsername: validatedData.codeforcesUsername
+          codeforcesUsername: validatedData.codeforcesUsername,
+          leetcodeSolved: validatedData.leetcodeSolved,
+          minPackageLPA: validatedData.minPackageLPA
+        },
+        create: {
+          userId: req.user.id,
+          college: validatedData.college,
+          branch: validatedData.branch,
+          year: validatedData.year,
+          cgpa: validatedData.cgpa,
+          skills: validatedData.skills || [],
+          targetCompanies: validatedData.targetCompanies || [],
+          targetRoles: validatedData.targetRoles || [],
+          availableHoursPerWeek: validatedData.availableHoursPerWeek || 10,
+          githubUsername: validatedData.githubUsername,
+          leetcodeUsername: validatedData.leetcodeUsername,
+          codeforcesUsername: validatedData.codeforcesUsername,
+          leetcodeSolved: validatedData.leetcodeSolved || 0,
+          minPackageLPA: validatedData.minPackageLPA
         },
         include: {
           user: {
@@ -164,6 +219,8 @@ export const updateProfile = async (req: AuthRequest, res: Response) => {
           }
         }
       });
+      
+      console.log('✅ Profile saved to database successfully');
 
       res.json({
         message: 'Profile updated successfully',
@@ -182,7 +239,9 @@ export const updateProfile = async (req: AuthRequest, res: Response) => {
           resumeUrl: profile.resumeUrl,
           githubUsername: profile.githubUsername,
           leetcodeUsername: profile.leetcodeUsername,
-          codeforcesUsername: profile.codeforcesUsername
+          codeforcesUsername: profile.codeforcesUsername,
+          leetcodeSolved: profile.leetcodeSolved,
+          minPackageLPA: profile.minPackageLPA
         }
       });
     } else {
@@ -205,6 +264,8 @@ export const updateProfile = async (req: AuthRequest, res: Response) => {
         githubUsername: validatedData.githubUsername,
         leetcodeUsername: validatedData.leetcodeUsername,
         codeforcesUsername: validatedData.codeforcesUsername,
+        leetcodeSolved: validatedData.leetcodeSolved,
+        minPackageLPA: validatedData.minPackageLPA,
         resumeUrl: currentProfile.resumeUrl || null
       };
 
@@ -218,12 +279,26 @@ export const updateProfile = async (req: AuthRequest, res: Response) => {
     }
   } catch (error: any) {
     console.error('❌ Update profile error:', error);
+    
+    // Handle specific Prisma errors
+    if (error.code === 'P2025') {
+      return res.status(404).json({ error: 'User or profile not found' });
+    }
+    
+    if (error.code === 'P2002') {
+      return res.status(400).json({ error: 'A profile with this data already exists' });
+    }
+    
     if (error.name === 'ZodError') {
       console.error('Validation errors:', error.errors);
       return res.status(400).json({ error: 'Invalid input', details: error.errors });
     }
-    console.error('Update profile error:', error);
-    res.status(500).json({ error: 'Failed to update profile' });
+    
+    console.error('Detailed error:', JSON.stringify(error, null, 2));
+    res.status(500).json({ 
+      error: 'Failed to update profile',
+      message: error.message || 'Unknown error occurred'
+    });
   }
 };
 

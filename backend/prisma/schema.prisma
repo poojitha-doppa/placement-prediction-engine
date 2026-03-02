@@ -3,12 +3,12 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "mongodb"
   url      = env("DATABASE_URL")
 }
 
 model User {
-  id        String   @id @default(uuid())
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
   email     String   @unique
   password  String
   name      String?
@@ -23,8 +23,8 @@ model User {
 }
 
 model Profile {
-  id                    String   @id @default(uuid())
-  userId                String   @unique
+  id                    String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId                String   @unique @db.ObjectId
   user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   
   college               String?
@@ -40,13 +40,15 @@ model Profile {
   githubUsername        String?
   leetcodeUsername      String?
   codeforcesUsername    String?
+  leetcodeSolved        Int      @default(0)
+  minPackageLPA         Float?
   
   updatedAt             DateTime @updatedAt
 }
 
 model Roadmap {
-  id             String        @id @default(uuid())
-  userId         String
+  id             String        @id @default(auto()) @map("_id") @db.ObjectId
+  userId         String        @db.ObjectId
   user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   
   durationWeeks  Int           @default(16)
@@ -55,13 +57,11 @@ model Roadmap {
   isActive       Boolean       @default(true)
   
   weeks          RoadmapWeek[]
-  
-  @@index([userId, isActive])
 }
 
 model RoadmapWeek {
-  id               String        @id @default(uuid())
-  roadmapId        String
+  id               String        @id @default(auto()) @map("_id") @db.ObjectId
+  roadmapId        String        @db.ObjectId
   roadmap          Roadmap       @relation(fields: [roadmapId], references: [id], onDelete: Cascade)
   
   weekNumber       Int
@@ -74,13 +74,11 @@ model RoadmapWeek {
   phase            String?
   
   tasks            RoadmapTask[]
-  
-  @@index([roadmapId, weekNumber])
 }
 
 model RoadmapTask {
-  id             String       @id @default(uuid())
-  weekId         String
+  id             String       @id @default(auto()) @map("_id") @db.ObjectId
+  weekId         String       @db.ObjectId
   week           RoadmapWeek  @relation(fields: [weekId], references: [id], onDelete: Cascade)
   
   title          String
@@ -91,8 +89,8 @@ model RoadmapTask {
 }
 
 model ProgressLog {
-  id                String   @id @default(uuid())
-  userId            String
+  id                String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId            String   @db.ObjectId
   user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   
   weekNumber        Int
@@ -101,12 +99,10 @@ model ProgressLog {
   hoursSpent        Float?
   notes             String?
   timestamp         DateTime @default(now())
-  
-  @@index([userId, weekNumber, timestamp])
 }
 
 model SkillAnalytics {
-  id           String   @id @default(uuid())
+  id           String   @id @default(auto()) @map("_id") @db.ObjectId
   userId       String
   date         DateTime @default(now())
   
@@ -115,12 +111,10 @@ model SkillAnalytics {
   targetLevel  Float
   problemsSolved Int?
   source       String
-  
-  @@index([userId, date, skillName])
 }
 
 model CompanyMatch {
-  id                 String   @id @default(uuid())
+  id                 String   @id @default(auto()) @map("_id") @db.ObjectId
   userId             String
   
   companyName        String
@@ -134,12 +128,10 @@ model CompanyMatch {
   minCGPA            Float?
   hiringStatus       String?
   computedAt         DateTime @default(now())
-  
-  @@index([userId, fitScore])
 }
 
 model OptimizationInsight {
-  id              String   @id @default(uuid())
+  id              String   @id @default(auto()) @map("_id") @db.ObjectId
   userId          String
   
   type            String
@@ -148,13 +140,11 @@ model OptimizationInsight {
   estimatedImpact Float?
   data            Json
   generatedAt     DateTime @default(now())
-  
-  @@index([userId, generatedAt])
 }
 
 model ExternalIntegration {
-  id             String             @id @default(uuid())
-  userId         String
+  id             String             @id @default(auto()) @map("_id") @db.ObjectId
+  userId         String             @db.ObjectId
   user           User               @relation(fields: [userId], references: [id], onDelete: Cascade)
   
   provider       String
@@ -172,23 +162,21 @@ model ExternalIntegration {
 }
 
 model ExternalMetric {
-  id             String              @id @default(uuid())
-  integrationId  String
+  id             String              @id @default(auto()) @map("_id") @db.ObjectId
+  integrationId  String              @db.ObjectId
   integration    ExternalIntegration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
   
   date           DateTime
   stats          Json
-  
-  @@index([integrationId, date])
 }
 
 model AgentLog {
-  id           String   @id @default(uuid())
-  userId       String
+  id           String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId       String   @db.ObjectId
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   
   agentType    String
-  inputPrompt  String   @db.Text
+  inputPrompt  String
   inputData    Json
   outputData   Json
   tokensUsed   Int?
@@ -196,6 +184,4 @@ model AgentLog {
   status       String
   errorMessage String?
   createdAt    DateTime @default(now())
-  
-  @@index([userId, createdAt])
 }
