@@ -660,7 +660,7 @@ export const api = {
     const weeksNeeded = Math.max(8, Math.round(16 - (currentLevel / 10)));
     
     // Generate Monte Carlo distribution
-    const monteCarloDistribution = [];
+    const monteCarloDistribution: { weeks: number; probability: number }[] = [];
     for (let weeks = Math.max(weeksNeeded - 3, 6); weeks <= Math.min(weeksNeeded + 4, 18); weeks++) {
       const distance = Math.abs(weeks - weeksNeeded);
       const probability = Math.exp(-Math.pow(distance, 2) / 2) / 2.5; // Normal distribution
@@ -685,29 +685,33 @@ export const api = {
         topic: 'Data Structures & Algorithms',
         currentLevel: hasDSA ? 75 : 45,
         targetLevel: 90,
-        estimatedWeeks: hasDSA ? 4 : 6,
-        impact: 'High',
+        priorityScore: 90,
+        estimatedHours: (hasDSA ? 4 : 6) * 40,
+        reason: 'High impact on technical interviews',
       },
       {
         topic: 'System Design',
         currentLevel: hasSystemDesign ? 60 : 30,
         targetLevel: 85,
-        estimatedWeeks: hasSystemDesign ? 4 : 6,
-        impact: 'High',
+        priorityScore: 85,
+        estimatedHours: (hasSystemDesign ? 4 : 6) * 40,
+        reason: 'High impact on senior roles',
       },
       {
         topic: 'Problem Solving Speed',
         currentLevel: Math.min((profile.leetcodeSolved || 0) / 5, 80),
         targetLevel: 90,
-        estimatedWeeks: 5,
-        impact: 'Medium',
+        priorityScore: 80,
+        estimatedHours: 5 * 40,
+        reason: 'Medium impact on coding rounds',
       },
       {
         topic: 'Behavioral Interview Prep',
         currentLevel: 50,
         targetLevel: 85,
-        estimatedWeeks: 2,
-        impact: 'Medium',
+        priorityScore: 70,
+        estimatedHours: 2 * 40,
+        reason: 'Medium impact on overall interview',
       },
     ];
     
@@ -717,6 +721,11 @@ export const api = {
         expectedTimeReductionPercent: Math.round((16 - weeksNeeded) / 16 * 100),
         monteCarloDistribution,
         topicPriorities,
+        weeklyFocus: {
+          topics: topicPriorities.slice(0, 2).map(tp => tp.topic),
+          explanation: 'Focus on high-priority topics to maximize interview success',
+          estimatedImpact: 75,
+        },
       },
       timestamp: new Date().toISOString(),
     };

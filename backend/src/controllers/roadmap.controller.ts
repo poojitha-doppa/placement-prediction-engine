@@ -62,28 +62,89 @@ const generateMockRoadmap = (userId: string, preferences?: any) => {
   const currentLevel = prefs.currentLevel || 'intermediate';
   const weakAreas = prefs.weakAreas || [];
   const specificGoals = prefs.specificGoals || [];
+  const learningGoal = prefs.learningPurpose || 'General Programming';
   
   const intensityMultiplier = urgency === 'urgent' ? 1.5 : urgency === 'relaxed' ? 0.7 : 1;
   const problemsPerWeek = Math.floor(timePerDay * 5 * intensityMultiplier);
   const hoursPerWeek = timePerDay * 7;
   
+  // Generate professional phase names based on learning goal
+  const generatePhaseNames = (goal: string) => {
+    const goalLower = goal.toLowerCase();
+    
+    if (goalLower.includes('data structures') || goalLower.includes('dsa') || goalLower.includes('algorithms')) {
+      return {
+        phase1: 'DSA Fundamentals',
+        phase2: 'Core DSA Concepts',
+        phase3: 'Advanced DSA Topics',
+        phase4: 'DSA Interview Prep'
+      };
+    } else if (goalLower.includes('system design') || goalLower.includes('architecture')) {
+      return {
+        phase1: 'Design Fundamentals',
+        phase2: 'Core Design Patterns',
+        phase3: 'Advanced Architecture',
+        phase4: 'Design Interview Prep'
+      };
+    } else if (goalLower.includes('web development') || goalLower.includes('frontend') || goalLower.includes('backend')) {
+      return {
+        phase1: 'Development Basics',
+        phase2: 'Core Technologies',
+        phase3: 'Advanced Frameworks',
+        phase4: 'Full-Stack Projects'
+      };
+    } else if (goalLower.includes('machine learning') || goalLower.includes('ml') || goalLower.includes('ai')) {
+      return {
+        phase1: 'ML Fundamentals',
+        phase2: 'Core Algorithms',
+        phase3: 'Advanced Techniques',
+        phase4: 'ML Projects & Deployment'
+      };
+    } else if (goalLower.includes('react') || goalLower.includes('vue') || goalLower.includes('angular')) {
+      return {
+        phase1: 'Framework Basics',
+        phase2: 'Component Development',
+        phase3: 'Advanced Patterns',
+        phase4: 'Production Applications'
+      };
+    } else if (goalLower.includes('python') || goalLower.includes('javascript') || goalLower.includes('java')) {
+      return {
+        phase1: 'Language Fundamentals',
+        phase2: 'Core Programming',
+        phase3: 'Advanced Concepts',
+        phase4: 'Real-World Projects'
+      };
+    } else {
+      // Generic phases for any other topic
+      const shortGoal = goal.split(' ').slice(0, 2).join(' ');
+      return {
+        phase1: `${shortGoal} Basics`,
+        phase2: `Core ${shortGoal}`,
+        phase3: `Advanced ${shortGoal}`,
+        phase4: `${shortGoal} Mastery`
+      };
+    }
+  };
+  
+  const phases = generatePhaseNames(learningGoal);
+  
   // Define phase focus based on user level and weak areas
   const getPhaseFocus = (weekNum: number) => {
     if (currentLevel === 'beginner') {
-      if (weekNum <= 4) return { phase: 'Foundation', areas: ['Arrays', 'Strings', 'Basic Math', 'Sorting'] };
-      if (weekNum <= 8) return { phase: 'Core DSA', areas: ['LinkedList', 'Stacks', 'Queues', 'Recursion'] };
-      if (weekNum <= 12) return { phase: 'Intermediate', areas: ['Trees', 'Hashing', 'Binary Search', 'Graphs'] };
-      return { phase: 'Interview Prep', areas: ['Dynamic Programming', 'Mock Interviews', 'System Design Basics'] };
+      if (weekNum <= 4) return { phase: phases.phase1, areas: ['Arrays', 'Strings', 'Basic Math', 'Sorting'] };
+      if (weekNum <= 8) return { phase: phases.phase2, areas: ['LinkedList', 'Stacks', 'Queues', 'Recursion'] };
+      if (weekNum <= 12) return { phase: phases.phase3, areas: ['Trees', 'Hashing', 'Binary Search', 'Graphs'] };
+      return { phase: phases.phase4, areas: ['Dynamic Programming', 'Mock Interviews', 'System Design Basics'] };
     } else if (currentLevel === 'intermediate') {
-      if (weekNum <= 4) return { phase: 'DSA Mastery', areas: ['Advanced Trees', 'Graphs', 'DP Patterns'] };
-      if (weekNum <= 8) return { phase: 'Problem Solving', areas: ['Greedy', 'Backtracking', 'Bit Manipulation'] };
-      if (weekNum <= 12) return { phase: 'System Design', areas: ['LLD', 'HLD', 'Scalability', 'Databases'] };
-      return { phase: 'Mock & Polish', areas: ['Company-Specific', 'Behavioral', 'Final Prep'] };
+      if (weekNum <= 4) return { phase: phases.phase1, areas: ['Advanced Trees', 'Graphs', 'DP Patterns'] };
+      if (weekNum <= 8) return { phase: phases.phase2, areas: ['Greedy', 'Backtracking', 'Bit Manipulation'] };
+      if (weekNum <= 12) return { phase: phases.phase3, areas: ['LLD', 'HLD', 'Scalability', 'Databases'] };
+      return { phase: phases.phase4, areas: ['Company-Specific', 'Behavioral', 'Final Prep'] };
     } else {
-      if (weekNum <= 4) return { phase: 'Advanced Topics', areas: ['Complex DP', 'Graph Algorithms', 'Advanced DS'] };
-      if (weekNum <= 8) return { phase: 'System Design Deep-Dive', areas: ['Distributed Systems', 'Scalability', 'Real Projects'] };
-      if (weekNum <= 12) return { phase: 'Company Prep', areas: ['Company-Specific Patterns', 'Product Design'] };
-      return { phase: 'Final Sprint', areas: ['Mock Interviews', 'Resume', 'Negotiations'] };
+      if (weekNum <= 4) return { phase: phases.phase1, areas: ['Complex DP', 'Graph Algorithms', 'Advanced DS'] };
+      if (weekNum <= 8) return { phase: phases.phase2, areas: ['Distributed Systems', 'Scalability', 'Real Projects'] };
+      if (weekNum <= 12) return { phase: phases.phase3, areas: ['Company-Specific Patterns', 'Product Design'] };
+      return { phase: phases.phase4, areas: ['Mock Interviews', 'Resume', 'Negotiations'] };
     }
   };
 
@@ -359,14 +420,32 @@ export const saveRoadmapPreferences = async (req: AuthRequest, res: Response) =>
     console.log('User ID:', req.user.id);
     console.log('Preferences:', JSON.stringify(req.body, null, 2));
 
-    const validatedData = roadmapPreferencesSchema.parse(req.body);
+    // Transform new simple form data to old format
+    let validatedData = req.body;
+    if (req.body.whatToLearn) {
+      // New simple form format
+      validatedData = {
+        learningPurpose: req.body.whatToLearn,
+        specificGoals: [req.body.whatToLearn], // Use the same value as goal
+        currentLevel: 'intermediate', // Default
+        timePerDay: req.body.hoursPerDay,
+        timePerWeek: req.body.hoursPerDay * 7,
+        learningStyle: 'mixed', // Default
+        targetDate: req.body.timeLeft, // Use timeLeft as targetDate
+        urgency: 'moderate', // Default
+        weakAreas: [], // Empty
+        additionalNotes: `Time commitment: ${req.body.hoursPerDay} hours/day, Timeline: ${req.body.timeLeft}`
+      };
+    }
+
+    const finalValidatedData = roadmapPreferencesSchema.parse(validatedData);
     
     // Store preferences in memory (in mock mode)
-    roadmapPreferences[req.user.id] = validatedData;
+    roadmapPreferences[req.user.id] = finalValidatedData;
     
     // Generate user summary
     const userProfile = mockProfiles[req.user.id] || {};
-    const summary = generateUserSummary(validatedData, userProfile);
+    const summary = generateUserSummary(finalValidatedData, userProfile);
     
     console.log('✅ Preferences saved');
     console.log('User Summary:', summary);
@@ -374,7 +453,7 @@ export const saveRoadmapPreferences = async (req: AuthRequest, res: Response) =>
     res.json({
       message: 'Preferences saved successfully',
       summary: summary,
-      preferences: validatedData
+      preferences: finalValidatedData
     });
   } catch (error: any) {
     console.error('❌ Save preferences error:', error);

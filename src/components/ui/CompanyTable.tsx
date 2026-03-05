@@ -33,7 +33,7 @@ export default function CompanyTable({
   
   // Helper to get success probability (handle both properties)
   const getSuccessProb = (company: any) => 
-    company.successProbability ?? (company.estimatedSuccessProb * 100) ?? 0;
+    company.successProbability ?? ((company.estimatedSuccessProb ?? 0) * 100);
   
   // Helper to get skill gaps (handle both properties)
   const getSkillGaps = (company: any) => company.skillGaps || company.keyGaps || [];
