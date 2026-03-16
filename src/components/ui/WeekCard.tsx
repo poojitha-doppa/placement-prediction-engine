@@ -20,7 +20,7 @@ import { useState } from 'react';
 
 export default function WeekCard({ week, onUpdateProgress }: WeekCardProps) {
   const theme = useTheme();
-  const [progress, setProgress] = useState(week.completionPercent);
+  const [progress, setProgress] = useState(week.progress ?? week.completionPercent ?? 0);
 
   const handleProgressChange = (_event: Event, newValue: number | number[]) => {
     const value = typeof newValue === 'number' ? newValue : newValue[0];
@@ -159,6 +159,17 @@ export default function WeekCard({ week, onUpdateProgress }: WeekCardProps) {
                 ))}
               </List>
             </Box>
+
+            {week.reasoning && (
+              <Box sx={{ mb: 3 }}>
+                <Typography variant="subtitle2" fontWeight="bold" gutterBottom>
+                  Why This Week Matters
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  {week.reasoning}
+                </Typography>
+              </Box>
+            )}
 
             {/* Progress Slider */}
             <Box>

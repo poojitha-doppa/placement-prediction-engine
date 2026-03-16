@@ -1,69 +1,58 @@
-import { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMemo, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Box,
-  Typography,
-  Button,
   Alert,
-  CircularProgress,
-  Paper,
-  Tabs,
-  Tab,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  useTheme,
+  Box,
+  Button,
+  Card,
+  CardContent,
   Chip,
+  CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   Divider,
+  Paper,
+  Tab,
+  Tabs,
+  Typography,
+  useTheme,
 } from '@mui/material';
-import { Refresh, Assessment, CheckCircle } from '@mui/icons-material';
-import WeekCard from '@/components/ui/WeekCard';
-import ProgressBar from '@/components/ui/ProgressBar';
+import { Assessment, Refresh, SmartDisplay } from '@mui/icons-material';
 import RoadmapQuestionnaire from '@/components/RoadmapQuestionnaire';
-import { roadmapApi, agentApi } from '@/api/api';
+import ProgressBar from '@/components/ui/ProgressBar';
+import WeekCard from '@/components/ui/WeekCard';
+import { roadmapApi } from '@/api/api';
+import type { CourseRoadmapPreferences, Roadmap, RoadmapPreferencesResponse } from '@/types';
 
 export default function RoadmapPage() {
   const theme = useTheme();
   const queryClient = useQueryClient();
-  const [tabValue, setTabValue] = useState(0);
+  const [showQuestionnaire, setShowQuestionnaire] = useState(false);
+  const [phaseTab, setPhaseTab] = useState(0);
   const [regenerateDialogOpen, setRegenerateDialogOpen] = useState(false);
-  const [showQuestionnaire, setShowQuestionnaire] = useState<boolean | null>(null);
-  const [userSummary, setUserSummary] = useState<string | null>(null);
 
-  // Fetch preferences first
-  const {
-    data: preferencesData,
-    isLoading: preferencesLoading,
-  } = useQuery({
+  const preferencesQuery = useQuery({
     queryKey: ['roadmapPreferences'],
-    queryFn: () => roadmapApi.getPreferences().catch(() => ({ hasPreferences: false })),
+    queryFn: () => roadmapApi.getPreferences().catch((): RoadmapPreferencesResponse => ({ hasPreferences: false })),
   });
 
-  // Fetch roadmap data
-  const {
-    data: roadmapData,
-    isLoading: roadmapLoading,
-    error,
-  } = useQuery({
+  const roadmapQuery = useQuery({
     queryKey: ['roadmap'],
     queryFn: () => roadmapApi.getRoadmap(),
-    enabled: preferencesData?.hasPreferences === true || showQuestionnaire === false,
+    enabled: !preferencesQuery.isLoading,
   });
 
-  // Save preferences mutation
   const savePreferencesMutation = useMutation({
-    mutationFn: (preferences: any) => roadmapApi.savePreferences(preferences),
-    onSuccess: (response) => {
-      console.log('Preferences saved:', response);
-      setUserSummary(response.summary);
+    mutationFn: (preferences: CourseRoadmapPreferences) => roadmapApi.savePreferences(preferences),
+    onSuccess: () => {
       setShowQuestionnaire(false);
       queryClient.invalidateQueries({ queryKey: ['roadmapPreferences'] });
       queryClient.invalidateQueries({ queryKey: ['roadmap'] });
     },
   });
 
-  // Update week progress mutation
   const updateProgressMutation = useMutation({
     mutationFn: ({ week, progress }: { week: number; progress: number }) =>
       roadmapApi.logProgress({ weekNumber: week, completionPercent: progress }),
@@ -73,167 +62,110 @@ export default function RoadmapPage() {
     },
   });
 
-  // Regenerate roadmap mutation
+  const activePreferences = (roadmapQuery.data as Roadmap | undefined)?.preferences || preferencesQuery.data?.preferences;
+  const roadmap = roadmapQuery.data as Roadmap | undefined;
+
   const regenerateMutation = useMutation({
-    mutationFn: () => agentApi.generateRoadmap(true),
+    mutationFn: async () => {
+      if (!activePreferences) {
+        throw new Error('No saved preferences available.');
+      }
+      await roadmapApi.savePreferences(activePreferences);
+      return roadmapApi.getRoadmap();
+    },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['roadmap'] });
       setRegenerateDialogOpen(false);
+      queryClient.invalidateQueries({ queryKey: ['roadmapPreferences'] });
+      queryClient.invalidateQueries({ queryKey: ['roadmap'] });
     },
   });
 
-  const roadmap = roadmapData;
+  const phaseGroups = useMemo(() => {
+    const plan = roadmap?.weeklyPlan || [];
+    return Object.entries(
+      plan.reduce<Record<string, typeof plan>>((groups, week) => {
+        const key = week.phase || `Week ${week.week}`;
+        groups[key] = groups[key] || [];
+        groups[key].push(week);
+        return groups;
+      }, {})
+    );
+  }, [roadmap?.weeklyPlan]);
+
+  const isLoading = preferencesQuery.isLoading || roadmapQuery.isLoading || savePreferencesMutation.isPending;
+  const shouldShowQuestionnaire = showQuestionnaire || !preferencesQuery.data?.hasPreferences;
+
+  const handleQuestionnaireComplete = (preferences: CourseRoadmapPreferences) => {
+    savePreferencesMutation.mutate(preferences);
+  };
 
   const handleUpdateProgress = (week: number, progress: number) => {
     updateProgressMutation.mutate({ week, progress });
   };
 
-  const handleRegenerateRoadmap = () => {
-    regenerateMutation.mutate();
-  };
+  if (preferencesQuery.isError) {
+    return <Alert severity="error">Failed to load roadmap preferences.</Alert>;
+  }
 
-  const handleQuestionnaireComplete = (data: any) => {
-    console.log('Questionnaire completed:', data);
-    savePreferencesMutation.mutate(data);
-  };
-
-  const handleSkipQuestionnaire = () => {
-    setShowQuestionnaire(false);
-  };
-
-  const isLoading = preferencesLoading || roadmapLoading;
-
-  // Show questionnaire if no preferences exist and user hasn't skipped
-  if (preferencesData?.hasPreferences === false && showQuestionnaire !== false) {
-    if (preferencesLoading) {
-      return (
-        <Box
-          sx={{
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
-            minHeight: '60vh',
-          }}
-        >
-          <CircularProgress />
-        </Box>
-      );
-    }
-
+  if (shouldShowQuestionnaire) {
     return (
       <Box>
         <RoadmapQuestionnaire
           onComplete={handleQuestionnaireComplete}
-          onSkip={handleSkipQuestionnaire}
+          onSkip={preferencesQuery.data?.hasPreferences ? () => setShowQuestionnaire(false) : undefined}
+          initialValues={activePreferences}
         />
         {savePreferencesMutation.isPending && (
-          <Box sx={{ display: 'flex', justifyContent: 'center', mt: 3 }}>
-            <CircularProgress />
-            <Typography sx={{ ml: 2 }}>Generating your personalized roadmap...</Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mt: 3 }}>
+            <CircularProgress size={24} />
+            <Typography>Saving your course setup and generating the roadmap...</Typography>
           </Box>
         )}
         {savePreferencesMutation.isError && (
           <Alert severity="error" sx={{ mt: 3 }}>
-            Failed to save preferences. Please try again.
+            Failed to save the course roadmap inputs. Please try again.
           </Alert>
         )}
       </Box>
     );
   }
 
-  // Show Update Preferences dialog if user clicks the button
-  if (showQuestionnaire === true) {
-    return (
-      <Box>
-        <Button
-          onClick={() => setShowQuestionnaire(null)}
-          sx={{ mb: 2 }}
-          variant="outlined"
-        >
-          ← Back to Roadmap
-        </Button>
-        <RoadmapQuestionnaire
-          onComplete={handleQuestionnaireComplete}
-          onSkip={() => setShowQuestionnaire(null)}
-        />
-        {savePreferencesMutation.isPending && (
-          <Box sx={{ display: 'flex', justifyContent: 'center', mt: 3 }}>
-            <CircularProgress />
-            <Typography sx={{ ml: 2 }}>Updating your roadmap...</Typography>
-          </Box>
-        )}
-      </Box>
-    );
-  }
-
-  // Group weeks by phase (4 weeks each)
-  const getWeeksForPhase = (phase: number) => {
-    if (!roadmap) return [];
-    const startWeek = phase * 4 + 1;
-    const endWeek = Math.min(startWeek + 3, roadmap.durationWeeks);
-    return roadmap.weeklyPlan.filter(
-      (w: any) => w.week >= startWeek && w.week <= endWeek
-    );
-  };
-
-  const phases = [
-    { label: 'Phase 1: Foundations (Weeks 1-4)', weeks: getWeeksForPhase(0) },
-    { label: 'Phase 2: Advanced DSA (Weeks 5-8)', weeks: getWeeksForPhase(1) },
-    { label: 'Phase 3: System Design (Weeks 9-12)', weeks: getWeeksForPhase(2) },
-    { label: 'Phase 4: Interview Prep (Weeks 13-16)', weeks: getWeeksForPhase(3) },
-  ];
-
   if (isLoading) {
     return (
-      <Box
-        sx={{
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          minHeight: '60vh',
-        }}
-      >
+      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '60vh' }}>
         <CircularProgress />
       </Box>
     );
   }
 
-  if (error) {
-    return (
-      <Alert severity="error" sx={{ mt: 2 }}>
-        Failed to load roadmap. Please try again.
-      </Alert>
-    );
+  if (roadmapQuery.isError || !roadmap) {
+    return <Alert severity="error">Failed to load roadmap data.</Alert>;
   }
 
   return (
     <Box>
-      {/* Header */}
       <Box
         sx={{
           display: 'flex',
           justifyContent: 'space-between',
-          alignItems: 'center',
+          alignItems: 'flex-start',
+          gap: 2,
+          flexWrap: 'wrap',
           mb: 4,
         }}
       >
         <Box>
-          <Typography variant="h4" fontWeight="bold" gutterBottom>
-            16-Week Placement Roadmap
+          <Typography variant="h4" fontWeight={800} gutterBottom>
+            {activePreferences?.courseName || 'Course'} Roadmap
           </Typography>
-          <Typography variant="body2" color="text.secondary">
-            Your personalized learning path to placement success
+          <Typography variant="body1" color="text.secondary">
+            AI-generated study plan based on your level, daily time commitment, and completion window.
           </Typography>
         </Box>
-        <Box sx={{ display: 'flex', gap: 2 }}>
-          {preferencesData?.hasPreferences && (
-            <Button
-              variant="outlined"
-              onClick={() => setShowQuestionnaire(true)}
-            >
-              Update Preferences
-            </Button>
-          )}
+        <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+          <Button variant="outlined" onClick={() => setShowQuestionnaire(true)}>
+            Edit Inputs
+          </Button>
           <Button
             variant="contained"
             startIcon={regenerateMutation.isPending ? <CircularProgress size={16} /> : <Refresh />}
@@ -245,194 +177,148 @@ export default function RoadmapPage() {
         </Box>
       </Box>
 
-      {/* User Summary Section */}
-      {(roadmapData?.userSummary || preferencesData?.summary) && (
-        <Paper
-          elevation={0}
-          sx={{
-            p: 3,
-            mb: 3,
-            border: `1px solid ${theme.palette.primary.main}`,
-            bgcolor: theme.palette.primary.main + '08',
-          }}
-        >
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-            <CheckCircle color="primary" />
-            <Typography variant="h6" fontWeight="bold">
-              Your Learning Profile
-            </Typography>
-          </Box>
-          <Typography variant="body1" color="text.secondary" sx={{ lineHeight: 1.8 }}>
-            {roadmapData?.userSummary || preferencesData?.summary}
-          </Typography>
-          
-          {/* Display preferences as chips */}
-          {(roadmapData?.preferences || preferencesData?.preferences) && (
-            <Box sx={{ mt: 3 }}>
-              <Divider sx={{ mb: 2 }} />
-              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                <Chip 
-                  label={`${(roadmapData?.preferences || preferencesData?.preferences).timePerDay}h/day`} 
-                  size="small" 
-                  color="primary" 
-                  variant="outlined" 
-                />
-                <Chip 
-                  label={(roadmapData?.preferences || preferencesData?.preferences).currentLevel} 
-                  size="small" 
-                  color="secondary" 
-                  variant="outlined" 
-                />
-                <Chip 
-                  label={(roadmapData?.preferences || preferencesData?.preferences).urgency} 
-                  size="small" 
-                  color="warning" 
-                  variant="outlined" 
-                />
-                <Chip 
-                  label={(roadmapData?.preferences || preferencesData?.preferences).learningStyle} 
-                  size="small" 
-                  color="info" 
-                  variant="outlined" 
-                />
-              </Box>
-            </Box>
-          )}
-        </Paper>
-      )}
-
-      {/* Overall Progress */}
       <Paper
         elevation={0}
         sx={{
           p: 3,
-          mb: 4,
+          mb: 3,
           border: `1px solid ${theme.palette.divider}`,
+          background: `linear-gradient(135deg, ${theme.palette.primary.main}08 0%, ${theme.palette.background.paper} 100%)`,
         }}
       >
-        <Box
-          sx={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            mb: 2,
-          }}
-        >
-          <Typography variant="h6" fontWeight="bold">
+        <Typography variant="h6" fontWeight={700} gutterBottom>
+          Learning Brief
+        </Typography>
+        <Typography variant="body1" color="text.secondary" sx={{ lineHeight: 1.8 }}>
+          {roadmap.userSummary}
+        </Typography>
+        <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mt: 2 }}>
+          <Chip label={`${activePreferences?.currentLevel} level`} color="primary" variant="outlined" />
+          <Chip label={`${activePreferences?.timePerDay} hours/day`} color="secondary" variant="outlined" />
+          <Chip label={`${activePreferences?.durationValue} ${activePreferences?.durationUnit}`} color="success" variant="outlined" />
+          <Chip label={`${roadmap.durationWeeks} weeks total`} color="info" variant="outlined" />
+        </Box>
+      </Paper>
+
+      <Paper elevation={0} sx={{ p: 3, mb: 3, border: `1px solid ${theme.palette.divider}` }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2, gap: 2, flexWrap: 'wrap' }}>
+          <Typography variant="h6" fontWeight={700}>
             Overall Progress
           </Typography>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             <Assessment color="primary" />
-            <Typography variant="h5" fontWeight="bold" color="primary.main">
-              {Math.round(roadmap?.overallCompletion || roadmap?.overallProgress || 0)}%
+            <Typography variant="h5" fontWeight={800} color="primary.main">
+              {Math.round(roadmap.overallCompletion || roadmap.overallProgress || 0)}%
             </Typography>
           </Box>
         </Box>
-        <ProgressBar
-          value={Math.round(roadmap?.overallCompletion || roadmap?.overallProgress || 0)}
-          color={
-            (roadmap?.overallCompletion || roadmap?.overallProgress || 0) >= 75
-              ? 'success'
-              : (roadmap?.overallCompletion || roadmap?.overallProgress || 0) >= 50
-              ? 'primary'
-              : 'warning'
-          }
-        />
+        <ProgressBar value={Math.round(roadmap.overallCompletion || roadmap.overallProgress || 0)} />
         <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
-          Generated on: {roadmap?.generatedAt ? new Date(roadmap.generatedAt).toLocaleDateString() : 'N/A'}
+          Generated on {roadmap.generatedAt ? new Date(roadmap.generatedAt).toLocaleString() : 'N/A'}
         </Typography>
       </Paper>
 
-      {/* Phase Tabs */}
-      <Paper
-        elevation={0}
-        sx={{
-          border: `1px solid ${theme.palette.divider}`,
-          mb: 3,
-        }}
-      >
+      {!!roadmap.globalNotes?.length && (
+        <Paper elevation={0} sx={{ p: 3, mb: 3, border: `1px solid ${theme.palette.divider}` }}>
+          <Typography variant="h6" fontWeight={700} gutterBottom>
+            Global Notes
+          </Typography>
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+            {roadmap.globalNotes.map((note) => (
+              <Chip key={note} label={note} sx={{ maxWidth: '100%' }} />
+            ))}
+          </Box>
+        </Paper>
+      )}
+
+      <Paper elevation={0} sx={{ p: 3, mb: 3, border: `1px solid ${theme.palette.divider}` }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+          <SmartDisplay color="error" />
+          <Typography variant="h6" fontWeight={700}>
+            Recommended Videos
+          </Typography>
+        </Box>
+        {roadmap.youtubeVideos?.length ? (
+          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2, 1fr)', xl: 'repeat(3, 1fr)' }, gap: 2 }}>
+            {roadmap.youtubeVideos.map((video) => (
+              <Card key={video.id} variant="outlined" sx={{ height: '100%' }}>
+                {video.thumbnailUrl && (
+                  <Box
+                    component="img"
+                    src={video.thumbnailUrl}
+                    alt={video.title}
+                    sx={{ width: '100%', aspectRatio: '16 / 9', objectFit: 'cover', borderBottom: `1px solid ${theme.palette.divider}` }}
+                  />
+                )}
+                <CardContent>
+                  <Typography variant="subtitle1" fontWeight={700} gutterBottom>
+                    {video.title}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                    {video.channelTitle}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                    {video.description || 'Open the video to review the full lesson content.'}
+                  </Typography>
+                  <Button variant="contained" href={video.videoUrl} target="_blank" rel="noreferrer">
+                    Open Video
+                  </Button>
+                </CardContent>
+              </Card>
+            ))}
+          </Box>
+        ) : (
+          <Alert severity="info">No YouTube resources are available yet for this roadmap.</Alert>
+        )}
+      </Paper>
+
+      <Paper elevation={0} sx={{ border: `1px solid ${theme.palette.divider}`, mb: 3 }}>
         <Tabs
-          value={tabValue}
-          onChange={(_e, newValue) => setTabValue(newValue)}
+          value={phaseTab}
+          onChange={(_, value) => setPhaseTab(value)}
           variant="scrollable"
           scrollButtons="auto"
           sx={{ borderBottom: `1px solid ${theme.palette.divider}` }}
         >
-          {phases.map((phase, index) => (
-            <Tab key={index} label={phase.label} />
+          {phaseGroups.map(([phaseName]) => (
+            <Tab key={phaseName} label={phaseName} />
           ))}
         </Tabs>
-
         <Box sx={{ p: 3 }}>
-          {phases[tabValue] && (
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-              {phases[tabValue].weeks.length > 0 ? (
-                phases[tabValue].weeks.map((week: any) => (
-                  <WeekCard
-                    key={week.week}
-                    week={week}
-                    onUpdateProgress={handleUpdateProgress}
-                  />
-                ))
-              ) : (
-                <Alert severity="info">No weeks available for this phase.</Alert>
-              )}
-            </Box>
+          {phaseGroups.length > 0 ? (
+            phaseGroups[phaseTab]?.[1].map((week) => (
+              <Box key={week.week} sx={{ mb: 2 }}>
+                <WeekCard week={week} onUpdateProgress={handleUpdateProgress} />
+              </Box>
+            ))
+          ) : (
+            <Alert severity="info">No weeks available in the generated roadmap.</Alert>
           )}
         </Box>
       </Paper>
 
-      {/* All Weeks View (Optional) */}
-      <Paper
-        elevation={0}
-        sx={{
-          p: 3,
-          border: `1px solid ${theme.palette.divider}`,
-        }}
-      >
-        <Typography variant="h6" fontWeight="bold" gutterBottom>
-          All Weeks Overview
+      <Paper elevation={0} sx={{ p: 3, border: `1px solid ${theme.palette.divider}` }}>
+        <Typography variant="h6" fontWeight={700} gutterBottom>
+          Full Roadmap
         </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-          Complete list of all 16 weeks
-        </Typography>
-        
+        <Divider sx={{ mb: 3 }} />
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-          {roadmap?.weeklyPlan.map((week: any) => (
-            <WeekCard
-              key={week.week}
-              week={week}
-              onUpdateProgress={handleUpdateProgress}
-            />
+          {roadmap.weeklyPlan.map((week) => (
+            <WeekCard key={week.week} week={week} onUpdateProgress={handleUpdateProgress} />
           ))}
         </Box>
       </Paper>
 
-      {/* Regenerate Confirmation Dialog */}
-      <Dialog
-        open={regenerateDialogOpen}
-        onClose={() => setRegenerateDialogOpen(false)}
-      >
-        <DialogTitle>Regenerate Roadmap?</DialogTitle>
+      <Dialog open={regenerateDialogOpen} onClose={() => setRegenerateDialogOpen(false)}>
+        <DialogTitle>Regenerate this roadmap?</DialogTitle>
         <DialogContent>
           <Typography>
-            This will create a new personalized roadmap based on your current
-            profile and preferences. Your current roadmap and progress will be
-            archived. Are you sure you want to continue?
+            This will generate a fresh roadmap for {activePreferences?.courseName} using your current saved inputs and replace the active roadmap.
           </Typography>
-          {preferencesData?.hasPreferences && (
-            <Alert severity="info" sx={{ mt: 2 }}>
-              Your saved preferences will be used to generate the new roadmap.
-            </Alert>
-          )}
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setRegenerateDialogOpen(false)}>Cancel</Button>
-          <Button
-            onClick={handleRegenerateRoadmap}
-            variant="contained"
-            disabled={regenerateMutation.isPending}
-          >
+          <Button variant="contained" onClick={() => regenerateMutation.mutate()} disabled={regenerateMutation.isPending}>
             {regenerateMutation.isPending ? 'Generating...' : 'Regenerate'}
           </Button>
         </DialogActions>

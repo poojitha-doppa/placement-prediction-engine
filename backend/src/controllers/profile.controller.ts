@@ -46,8 +46,13 @@ const isDatabaseAvailable = async () => {
     }
     // Use a MongoDB-compatible ping instead of SQL
     await prisma.$connect();
-    // Try to access the database
-    await prisma.user.findFirst();
+    // Try to access the database with a timeout
+    await Promise.race([
+      prisma.user.findFirst(),
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Database timeout')), 3000)
+      )
+    ]);
     console.log('✅ Database is available and connected');
     return true;
   } catch (error: any) {
@@ -59,11 +64,12 @@ const isDatabaseAvailable = async () => {
 
 export const getProfile = async (req: AuthRequest, res: Response) => {
   try {
+    console.log(`📖 Attempting to fetch profile for user: ${req.user.id} (${req.user.email})`);
     const dbAvailable = await isDatabaseAvailable();
 
     if (dbAvailable) {
       // Database mode
-      console.log(`📖 Fetching profile for user: ${req.user.id}`);
+      console.log(`✅ Using DATABASE mode for user: ${req.user.id}`);
       
       let profile = await prisma.profile.findUnique({
         where: { userId: req.user.id },
@@ -80,14 +86,16 @@ export const getProfile = async (req: AuthRequest, res: Response) => {
 
       // If profile doesn't exist, create it with defaults
       if (!profile) {
-        console.log('📝 Profile not found, creating new profile with defaults');
+        console.log('📝 Profile not found in database, creating new profile with defaults');
         profile = await prisma.profile.create({
           data: {
             userId: req.user.id,
             skills: [],
             targetCompanies: [],
             targetRoles: [],
-            availableHoursPerWeek: 10
+            combinedSkills: [],
+            availableHoursPerWeek: 10,
+            leetcodeSolved: 0
           },
           include: {
             user: {
@@ -99,11 +107,17 @@ export const getProfile = async (req: AuthRequest, res: Response) => {
             }
           }
         });
+        console.log('✅ New profile created successfully');
+      } else {
+        console.log('✅ Profile found in database:', {
+          name: profile.user.name,
+          college: profile.college,
+          branch: profile.branch,
+          skillsCount: profile.skills?.length || 0
+        });
       }
-
-      console.log('✅ Profile fetched successfully');
       
-      res.json({
+      const profileResponse = {
         id: profile.id,
         name: profile.user.name,
         email: profile.user.email,
@@ -111,17 +125,20 @@ export const getProfile = async (req: AuthRequest, res: Response) => {
         branch: profile.branch,
         year: profile.year,
         cgpa: profile.cgpa,
-        skills: profile.skills,
-        targetCompanies: profile.targetCompanies,
-        targetRoles: profile.targetRoles,
+        skills: profile.skills || [],
+        targetCompanies: profile.targetCompanies || [],
+        targetRoles: profile.targetRoles || [],
         availableHoursPerWeek: profile.availableHoursPerWeek,
         resumeUrl: profile.resumeUrl,
         githubUsername: profile.githubUsername,
         leetcodeUsername: profile.leetcodeUsername,
         codeforcesUsername: profile.codeforcesUsername,
-        leetcodeSolved: profile.leetcodeSolved,
+        leetcodeSolved: profile.leetcodeSolved || 0,
         minPackageLPA: profile.minPackageLPA
-      });
+      };
+      
+      console.log('📤 Sending profile response:', profileResponse);
+      res.json(profileResponse);
     } else {
       // Mock mode - return complete profile with demo data
       let profile = mockProfiles[req.user.id];
@@ -174,49 +191,59 @@ export const updateProfile = async (req: AuthRequest, res: Response) => {
 
     if (dbAvailable) {
       // Database mode
-      console.log('💾 Updating in database mode');
+      console.log('💾 Updating in DATABASE mode');
       
+      // Update user name if provided
       if (validatedData.name) {
+        console.log('📝 Updating user name to:', validatedData.name);
         await prisma.user.update({
           where: { id: req.user.id },
           data: { name: validatedData.name }
         });
       }
 
+      // Prepare update data - only include defined fields
+      const updateData: any = {};
+      if (validatedData.college !== undefined) updateData.college = validatedData.college;
+      if (validatedData.branch !== undefined) updateData.branch = validatedData.branch;
+      if (validatedData.year !== undefined) updateData.year = validatedData.year;
+      if (validatedData.cgpa !== undefined) updateData.cgpa = validatedData.cgpa;
+      if (validatedData.skills !== undefined) updateData.skills = validatedData.skills;
+      if (validatedData.targetCompanies !== undefined) updateData.targetCompanies = validatedData.targetCompanies;
+      if (validatedData.targetRoles !== undefined) updateData.targetRoles = validatedData.targetRoles;
+      if (validatedData.availableHoursPerWeek !== undefined) updateData.availableHoursPerWeek = validatedData.availableHoursPerWeek;
+      if (validatedData.githubUsername !== undefined) updateData.githubUsername = validatedData.githubUsername;
+      if (validatedData.leetcodeUsername !== undefined) updateData.leetcodeUsername = validatedData.leetcodeUsername;
+      if (validatedData.codeforcesUsername !== undefined) updateData.codeforcesUsername = validatedData.codeforcesUsername;
+      if (validatedData.leetcodeSolved !== undefined) updateData.leetcodeSolved = validatedData.leetcodeSolved;
+      if (validatedData.minPackageLPA !== undefined) updateData.minPackageLPA = validatedData.minPackageLPA;
+      
+      // Ensure combinedSkills exists for create
+      const createData = {
+        userId: req.user.id,
+        college: validatedData.college,
+        branch: validatedData.branch,
+        year: validatedData.year,
+        cgpa: validatedData.cgpa,
+        skills: validatedData.skills || [],
+        targetCompanies: validatedData.targetCompanies || [],
+        targetRoles: validatedData.targetRoles || [],
+        combinedSkills: [],
+        availableHoursPerWeek: validatedData.availableHoursPerWeek || 10,
+        githubUsername: validatedData.githubUsername,
+        leetcodeUsername: validatedData.leetcodeUsername,
+        codeforcesUsername: validatedData.codeforcesUsername,
+        leetcodeSolved: validatedData.leetcodeSolved || 0,
+        minPackageLPA: validatedData.minPackageLPA
+      };
+
+      console.log('💾 Upserting profile with data:', updateData);
+
       // Use upsert to create profile if it doesn't exist or update if it does
       const profile = await prisma.profile.upsert({
         where: { userId: req.user.id },
-        update: {
-          college: validatedData.college,
-          branch: validatedData.branch,
-          year: validatedData.year,
-          cgpa: validatedData.cgpa,
-          skills: validatedData.skills,
-          targetCompanies: validatedData.targetCompanies,
-          targetRoles: validatedData.targetRoles,
-          availableHoursPerWeek: validatedData.availableHoursPerWeek,
-          githubUsername: validatedData.githubUsername,
-          leetcodeUsername: validatedData.leetcodeUsername,
-          codeforcesUsername: validatedData.codeforcesUsername,
-          leetcodeSolved: validatedData.leetcodeSolved,
-          minPackageLPA: validatedData.minPackageLPA
-        },
-        create: {
-          userId: req.user.id,
-          college: validatedData.college,
-          branch: validatedData.branch,
-          year: validatedData.year,
-          cgpa: validatedData.cgpa,
-          skills: validatedData.skills || [],
-          targetCompanies: validatedData.targetCompanies || [],
-          targetRoles: validatedData.targetRoles || [],
-          availableHoursPerWeek: validatedData.availableHoursPerWeek || 10,
-          githubUsername: validatedData.githubUsername,
-          leetcodeUsername: validatedData.leetcodeUsername,
-          codeforcesUsername: validatedData.codeforcesUsername,
-          leetcodeSolved: validatedData.leetcodeSolved || 0,
-          minPackageLPA: validatedData.minPackageLPA
-        },
+        update: updateData,
+        create: createData,
         include: {
           user: {
             select: {
@@ -228,6 +255,12 @@ export const updateProfile = async (req: AuthRequest, res: Response) => {
       });
       
       console.log('✅ Profile saved to database successfully');
+      console.log('📊 Updated profile:', {
+        college: profile.college,
+        branch: profile.branch,
+        year: profile.year,
+        skillsCount: profile.skills?.length || 0
+      });
 
       res.json({
         message: 'Profile updated successfully',
@@ -407,11 +440,7 @@ export const uploadResume = async (req: AuthRequest, res: Response) => {
         data: {
           resumeUrl,
           parsedResume: parsedData as any,
-          combinedSkills,
-          // Update name and email if empty
-          ...(existingProfile?.user && !existingProfile.user.name && parsedData.full_name 
-            ? {} 
-            : {})
+          combinedSkills
         }
       });
       

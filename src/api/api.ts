@@ -1,4 +1,5 @@
 import axios from 'axios';
+import type { CourseRoadmapPreferences, Roadmap, RoadmapPreferencesResponse } from '@/types';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
@@ -100,7 +101,7 @@ export const profileApi = {
 
 // Roadmap APIs
 export const roadmapApi = {
-  getRoadmap: async () => {
+  getRoadmap: async (): Promise<Roadmap> => {
     const { data } = await api.get('/api/roadmap');
     return data;
   },
@@ -123,12 +124,12 @@ export const roadmapApi = {
     return data;
   },
 
-  savePreferences: async (preferences: any) => {
+  savePreferences: async (preferences: CourseRoadmapPreferences) => {
     const { data } = await api.post('/api/roadmap/preferences', preferences);
     return data;
   },
 
-  getPreferences: async () => {
+  getPreferences: async (): Promise<RoadmapPreferencesResponse> => {
     const { data } = await api.get('/api/roadmap/preferences');
     return data;
   },

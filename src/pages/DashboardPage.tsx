@@ -16,8 +16,10 @@ import {
   TrendingUp,
   EmojiEvents,
   School,
+  Logout,
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '@/contexts/AuthContext';
 import KpiCard from '@/components/ui/KpiCard';
 import GaugeChart from '@/components/ui/GaugeChart';
 import LineChartSkills from '@/components/ui/LineChartSkills';
@@ -27,6 +29,7 @@ import type { CompanyMatch } from '@/types';
 export default function DashboardPage() {
   const theme = useTheme();
   const navigate = useNavigate();
+  const { logout } = useAuth();
 
   // Fetch profile first to check if it's complete
   const {
@@ -75,6 +78,11 @@ export default function DashboardPage() {
 
   const handleRefresh = () => {
     window.location.reload();
+  };
+
+  const handleLogout = () => {
+    logout();
+    navigate('/login');
   };
 
   const topCompanies = (companies?.rankedCompanies || []).slice(0, 3);
@@ -177,6 +185,21 @@ export default function DashboardPage() {
                   onClick={handleRefresh}
                 >
                   Refresh Data
+                </Button>
+                <Button
+                  variant="outlined"
+                  sx={{
+                    borderColor: 'white',
+                    color: 'white',
+                    '&:hover': {
+                      borderColor: 'white',
+                      backgroundColor: 'rgba(255,255,255,0.1)',
+                    },
+                  }}
+                  startIcon={<Logout />}
+                  onClick={handleLogout}
+                >
+                  Logout
                 </Button>
               </Box>
             </Box>

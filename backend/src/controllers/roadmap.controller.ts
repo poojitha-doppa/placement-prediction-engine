@@ -3,6 +3,8 @@ import { AuthRequest } from '../middleware/auth.js';
 import prisma from '../config/db.js';
 import { progressLogSchema, roadmapPreferencesSchema } from '../utils/validation.js';
 import { mockProfiles } from './profile.controller.js';
+import { CourseRoadmapRequest, generateCourseRoadmapWithAI } from '../services/llm.service.js';
+import { getYouTubeRecommendations } from '../services/youtube.service.js';
 
 // Check if database is available
 const isDatabaseAvailable = async () => {
@@ -19,221 +21,187 @@ const isDatabaseAvailable = async () => {
 // Store for roadmap preferences
 const roadmapPreferences: any = {};
 
-// Generate user summary from preferences
-const generateUserSummary = (preferences: any, userProfile: any) => {
-  const { learningPurpose, specificGoals, currentLevel, timePerDay, urgency, weakAreas, targetDate } = preferences;
-  
-  const levelDescriptions = {
-    beginner: 'starting their coding journey',
-    intermediate: 'with some programming experience',
-    advanced: 'with a strong technical foundation',
-    expert: 'who is interview-ready and seeking final polish'
-  };
+const durationUnitToDays: Record<CourseRoadmapRequest['durationUnit'], number> = {
+  days: 1,
+  weeks: 7,
+  months: 30
+};
 
-  const urgencyDescriptions = {
-    relaxed: 'prefers a steady, manageable pace',
-    moderate: 'aims for consistent progress',
-    urgent: 'needs accelerated learning due to tight deadlines'
+const calculateDurationWeeks = (preferences: CourseRoadmapRequest) => {
+  const totalDays = preferences.durationValue * durationUnitToDays[preferences.durationUnit];
+  return Math.max(1, Math.min(52, Math.ceil(totalDays / 7)));
+};
+
+// Generate user summary from preferences
+const generateUserSummary = (preferences: CourseRoadmapRequest, userProfile: any) => {
+  const { courseName, currentLevel, timePerDay, durationValue, durationUnit, experienceNotes, additionalNotes } = preferences;
+
+  const levelDescriptions = {
+    beginner: 'starting from the fundamentals',
+    intermediate: 'building on some existing familiarity',
+    advanced: 'already comfortable with the core concepts',
+    expert: 'optimizing for mastery and depth'
   };
 
   const hoursPerWeek = timePerDay * 7;
-  const weeksAvailable = targetDate ? 
-    Math.max(1, Math.ceil((new Date(targetDate).getTime() - Date.now()) / (7 * 24 * 60 * 60 * 1000))) : 16;
+  const weeksAvailable = calculateDurationWeeks(preferences);
 
-  const summary = `${userProfile?.name || 'The student'} is ${levelDescriptions[currentLevel as keyof typeof levelDescriptions]} ` +
-    `and ${urgencyDescriptions[urgency as keyof typeof urgencyDescriptions]}. ` +
-    `Their primary goal is: "${learningPurpose}". ` +
-    `They are targeting ${specificGoals.slice(0, 3).join(', ')}${specificGoals.length > 3 ? ', and more' : ''}. ` +
-    `With ${timePerDay} hours available daily (${hoursPerWeek} hours/week) over the next ${weeksAvailable} weeks, ` +
-    `they need focused attention on ${weakAreas.length > 0 ? weakAreas.slice(0, 3).join(', ') : 'comprehensive skill development'}. ` +
-    (targetDate ? `Timeline: Completion target by ${new Date(targetDate).toLocaleDateString()}.` : '');
+  const summary = `${userProfile?.name || 'The learner'} wants to complete ${courseName} and is ${levelDescriptions[currentLevel]}. ` +
+    `They can invest ${timePerDay} hours per day (${hoursPerWeek} hours per week) and want to finish within ${durationValue} ${durationUnit}. ` +
+    `This roadmap is structured for ${weeksAvailable} weeks of focused progression.` +
+    (experienceNotes ? ` Prior experience: ${experienceNotes}.` : '') +
+    (additionalNotes ? ` Additional preferences: ${additionalNotes}.` : '');
 
   return summary;
 };
 
-// Mock roadmap data with preferences
-const generateMockRoadmap = (userId: string, preferences?: any) => {
-  const userProfile = mockProfiles[userId] || {};
-  const prefs = preferences || roadmapPreferences[userId] || {};
-  
-  // Calculate intensity based on time and urgency
-  const timePerDay = prefs.timePerDay || 2;
-  const urgency = prefs.urgency || 'moderate';
-  const currentLevel = prefs.currentLevel || 'intermediate';
-  const weakAreas = prefs.weakAreas || [];
-  const specificGoals = prefs.specificGoals || [];
-  const learningGoal = prefs.learningPurpose || 'General Programming';
-  
-  const intensityMultiplier = urgency === 'urgent' ? 1.5 : urgency === 'relaxed' ? 0.7 : 1;
-  const problemsPerWeek = Math.floor(timePerDay * 5 * intensityMultiplier);
-  const hoursPerWeek = timePerDay * 7;
-  
-  // Generate professional phase names based on learning goal
-  const generatePhaseNames = (goal: string) => {
-    const goalLower = goal.toLowerCase();
-    
-    if (goalLower.includes('data structures') || goalLower.includes('dsa') || goalLower.includes('algorithms')) {
-      return {
-        phase1: 'DSA Fundamentals',
-        phase2: 'Core DSA Concepts',
-        phase3: 'Advanced DSA Topics',
-        phase4: 'DSA Interview Prep'
-      };
-    } else if (goalLower.includes('system design') || goalLower.includes('architecture')) {
-      return {
-        phase1: 'Design Fundamentals',
-        phase2: 'Core Design Patterns',
-        phase3: 'Advanced Architecture',
-        phase4: 'Design Interview Prep'
-      };
-    } else if (goalLower.includes('web development') || goalLower.includes('frontend') || goalLower.includes('backend')) {
-      return {
-        phase1: 'Development Basics',
-        phase2: 'Core Technologies',
-        phase3: 'Advanced Frameworks',
-        phase4: 'Full-Stack Projects'
-      };
-    } else if (goalLower.includes('machine learning') || goalLower.includes('ml') || goalLower.includes('ai')) {
-      return {
-        phase1: 'ML Fundamentals',
-        phase2: 'Core Algorithms',
-        phase3: 'Advanced Techniques',
-        phase4: 'ML Projects & Deployment'
-      };
-    } else if (goalLower.includes('react') || goalLower.includes('vue') || goalLower.includes('angular')) {
-      return {
-        phase1: 'Framework Basics',
-        phase2: 'Component Development',
-        phase3: 'Advanced Patterns',
-        phase4: 'Production Applications'
-      };
-    } else if (goalLower.includes('python') || goalLower.includes('javascript') || goalLower.includes('java')) {
-      return {
-        phase1: 'Language Fundamentals',
-        phase2: 'Core Programming',
-        phase3: 'Advanced Concepts',
-        phase4: 'Real-World Projects'
-      };
-    } else {
-      // Generic phases for any other topic
-      const shortGoal = goal.split(' ').slice(0, 2).join(' ');
-      return {
-        phase1: `${shortGoal} Basics`,
-        phase2: `Core ${shortGoal}`,
-        phase3: `Advanced ${shortGoal}`,
-        phase4: `${shortGoal} Mastery`
-      };
-    }
-  };
-  
-  const phases = generatePhaseNames(learningGoal);
-  
-  // Define phase focus based on user level and weak areas
-  const getPhaseFocus = (weekNum: number) => {
-    if (currentLevel === 'beginner') {
-      if (weekNum <= 4) return { phase: phases.phase1, areas: ['Arrays', 'Strings', 'Basic Math', 'Sorting'] };
-      if (weekNum <= 8) return { phase: phases.phase2, areas: ['LinkedList', 'Stacks', 'Queues', 'Recursion'] };
-      if (weekNum <= 12) return { phase: phases.phase3, areas: ['Trees', 'Hashing', 'Binary Search', 'Graphs'] };
-      return { phase: phases.phase4, areas: ['Dynamic Programming', 'Mock Interviews', 'System Design Basics'] };
-    } else if (currentLevel === 'intermediate') {
-      if (weekNum <= 4) return { phase: phases.phase1, areas: ['Advanced Trees', 'Graphs', 'DP Patterns'] };
-      if (weekNum <= 8) return { phase: phases.phase2, areas: ['Greedy', 'Backtracking', 'Bit Manipulation'] };
-      if (weekNum <= 12) return { phase: phases.phase3, areas: ['LLD', 'HLD', 'Scalability', 'Databases'] };
-      return { phase: phases.phase4, areas: ['Company-Specific', 'Behavioral', 'Final Prep'] };
-    } else {
-      if (weekNum <= 4) return { phase: phases.phase1, areas: ['Complex DP', 'Graph Algorithms', 'Advanced DS'] };
-      if (weekNum <= 8) return { phase: phases.phase2, areas: ['Distributed Systems', 'Scalability', 'Real Projects'] };
-      if (weekNum <= 12) return { phase: phases.phase3, areas: ['Company-Specific Patterns', 'Product Design'] };
-      return { phase: phases.phase4, areas: ['Mock Interviews', 'Resume', 'Negotiations'] };
-    }
-  };
+const buildMockRoadmap = (preferences: CourseRoadmapRequest) => {
+  const durationWeeks = calculateDurationWeeks(preferences);
+  const estimatedHours = Math.max(1, Math.round(preferences.timePerDay * 7));
+  const phaseSize = Math.max(1, Math.ceil(durationWeeks / 4));
+  const phaseLabels = ['Foundation', 'Core Concepts', 'Hands-On Projects', 'Mastery and Review'];
 
-  // Generate personalized weeks
-  const weeks = Array.from({ length: 16 }, (_, i) => {
-    const weekNum = i + 1;
-    const phaseFocus = getPhaseFocus(weekNum);
-    
-    // Include weak areas in early weeks
-    const focusAreas = weekNum <= 8 && weakAreas.length > 0 
-      ? [...phaseFocus.areas.slice(0, 2), ...weakAreas.slice(0, 2)]
-      : phaseFocus.areas;
-
-    // Generate targets based on goals
-    const targets = [
-      `Solve ${problemsPerWeek + weekNum} problems`,
-      ...specificGoals.slice(0, 2).map(goal => `Progress on: ${goal}`),
-      'Complete all assigned tasks',
-      'Review and revise concepts'
-    ];
-
+  const weeklyPlan = Array.from({ length: durationWeeks }, (_, index) => {
+    const weekNumber = index + 1;
+    const phase = phaseLabels[Math.min(phaseLabels.length - 1, Math.floor(index / phaseSize))];
     return {
-      id: `week-${weekNum}`,
-      week: weekNum,
-      phase: phaseFocus.phase,
-      focusAreas: focusAreas.slice(0, 4),
-      targets: targets.slice(0, 5),
-      expectedOutcomes: [
-        'Strengthen problem-solving skills',
-        'Master key concepts',
-        weekNum % 4 === 0 ? 'Complete phase milestone' : 'Build momentum'
+      id: `week-${weekNumber}`,
+      week: weekNumber,
+      phase,
+      focusAreas: [
+        `${preferences.courseName} fundamentals`,
+        weekNumber <= Math.ceil(durationWeeks / 2) ? 'Concept drills' : 'Hands-on application',
+        weekNumber === durationWeeks ? 'Revision and capstone review' : 'Weekly practice'
       ],
-      estimatedHours: Math.round(hoursPerWeek),
+      targets: [
+        `Study ${preferences.courseName} for ${estimatedHours} hours this week`,
+        `Complete a ${preferences.currentLevel} level checkpoint for week ${weekNumber}`,
+        weekNumber % 2 === 0 ? 'Build or refine a small practical exercise' : 'Summarize key takeaways in notes'
+      ],
+      expectedOutcomes: [
+        `Better command over ${preferences.courseName}`,
+        'Clear understanding of the week\'s concepts'
+      ],
+      reasoning: `Week ${weekNumber} reinforces the ${phase.toLowerCase()} stage for ${preferences.courseName}.`,
+      priorityScore: Number(Math.max(0.5, 1 - index * 0.02).toFixed(2)),
+      estimatedHours,
       progress: 0,
-      tasks: [
-        { 
-          id: `task-${weekNum}-1`, 
-          title: `Master ${focusAreas[0] || 'Core Concepts'}`, 
-          description: 'Deep dive into theory and practice', 
-          estimatedHours: Math.round(hoursPerWeek * 0.4), 
-          isCompleted: false 
-        },
-        { 
-          id: `task-${weekNum}-2`, 
-          title: `Solve ${problemsPerWeek} problems`, 
-          description: 'Practice problems on focused topics', 
-          estimatedHours: Math.round(hoursPerWeek * 0.5), 
-          isCompleted: false 
-        },
-        { 
-          id: `task-${weekNum}-3`, 
-          title: 'Review and document learnings', 
-          description: 'Consolidate knowledge and track progress', 
-          estimatedHours: Math.round(hoursPerWeek * 0.1), 
-          isCompleted: false 
-        }
-      ]
+      tasks: []
     };
   });
 
-  // Generate summary if preferences exist
-  const summary = prefs.learningPurpose ? generateUserSummary(prefs, userProfile) : null;
-
   return {
-    id: 'mock-roadmap',
-    durationWeeks: 16,
+    id: `mock-roadmap-${Date.now()}`,
+    durationWeeks,
     overallProgress: 0,
     overallCompletion: 0,
     generatedAt: new Date().toISOString(),
-    userSummary: summary,
     globalNotes: [
-      'Stay consistent with daily practice',
-      `Dedicate ${timePerDay} hours daily`,
-      urgency === 'urgent' ? 'Maintain high intensity - deadline approaching!' : 'Pace yourself and avoid burnout',
-      ...specificGoals.slice(0, 2)
+      'Keep your daily study slot fixed to maintain momentum.',
+      'Do one short recap at the end of every week before moving ahead.',
+      'Convert theory into a small deliverable or exercise every week.'
     ],
-    weeklyPlan: weeks,
-    preferences: prefs
+    weeklyPlan
   };
+};
+
+const buildRoadmapResponse = async (
+  roadmap: any,
+  preferences: CourseRoadmapRequest,
+  userProfile: any,
+  progressMap?: Map<number, number>
+) => {
+  const youtubeVideos = await getYouTubeRecommendations(preferences.courseName, preferences.currentLevel);
+  const weeklyPlan = roadmap.weeklyPlan
+    ? roadmap.weeklyPlan.map((week: any) => ({
+        ...week,
+        progress: progressMap?.get(week.week) || week.progress || 0,
+        completionPercent: progressMap?.get(week.week) || week.progress || 0,
+        tasks: week.tasks || []
+      }))
+    : roadmap.weeks.map((week: any) => ({
+        id: week.id,
+        week: week.weekNumber,
+        phase: week.phase,
+        focusAreas: week.focusAreas,
+        targets: week.targets,
+        expectedOutcomes: week.expectedOutcomes,
+        reasoning: week.reasoning,
+        priorityScore: week.priorityScore,
+        estimatedHours: week.estimatedHours,
+        progress: progressMap?.get(week.weekNumber) || 0,
+        completionPercent: progressMap?.get(week.weekNumber) || 0,
+        tasks: week.tasks || []
+      }));
+
+  const overallCompletion = weeklyPlan.length > 0
+    ? weeklyPlan.reduce((sum: number, week: any) => sum + (week.progress || 0), 0) / weeklyPlan.length
+    : 0;
+
+  return {
+    id: roadmap.id,
+    durationWeeks: roadmap.durationWeeks,
+    overallProgress: Number(overallCompletion.toFixed(2)),
+    overallCompletion: Number(overallCompletion.toFixed(2)),
+    generatedAt: roadmap.generatedAt || new Date().toISOString(),
+    userSummary: generateUserSummary(preferences, userProfile),
+    globalNotes: roadmap.globalNotes || [],
+    weeklyPlan,
+    preferences,
+    youtubeVideos,
+    aiGenerated: Boolean(roadmap.aiGenerated)
+  };
+};
+
+const generateRoadmapFromPreferences = async (preferences: CourseRoadmapRequest) => {
+  try {
+    const aiRoadmap = await generateCourseRoadmapWithAI(preferences);
+    return {
+      id: `ai-roadmap-${Date.now()}`,
+      generatedAt: new Date().toISOString(),
+      aiGenerated: true,
+      ...aiRoadmap,
+      weeklyPlan: aiRoadmap.weeklyPlan.map((week: any) => ({
+        ...week,
+        progress: 0,
+        completionPercent: 0,
+        tasks: []
+      }))
+    };
+  } catch (error: any) {
+    console.log('⚠️  AI generation failed, using structured fallback:', error.message);
+    return {
+      aiGenerated: false,
+      ...buildMockRoadmap(preferences)
+    };
+  }
 };
 
 export const getRoadmap = async (req: AuthRequest, res: Response) => {
   try {
     const dbAvailable = await isDatabaseAvailable();
+    const preferences = roadmapPreferences[req.user.id] as CourseRoadmapRequest | undefined;
+    const userProfile = mockProfiles[req.user.id] || {};
+
+    if (!preferences) {
+      return res.json({
+        id: null,
+        durationWeeks: 0,
+        overallProgress: 0,
+        overallCompletion: 0,
+        generatedAt: null,
+        globalNotes: [],
+        weeklyPlan: [],
+        preferences: null,
+        userSummary: null,
+        youtubeVideos: [],
+        hasPreferences: false
+      });
+    }
 
     if (!dbAvailable) {
-      // Return mock roadmap with user preferences
-      const preferences = roadmapPreferences[req.user.id];
-      return res.json(generateMockRoadmap(req.user.id, preferences));
+      const generatedRoadmap = await generateRoadmapFromPreferences(preferences);
+      return res.json(await buildRoadmapResponse(generatedRoadmap, preferences, userProfile));
     }
 
     const roadmap = await prisma.roadmap.findFirst({
@@ -254,14 +222,35 @@ export const getRoadmap = async (req: AuthRequest, res: Response) => {
     });
 
     if (!roadmap) {
-      // Return empty roadmap structure
-      return res.json({
-        id: null,
-        durationWeeks: 16,
-        overallProgress: 0,
-        globalNotes: [],
-        weeklyPlan: []
+      const generatedRoadmap = await generateRoadmapFromPreferences(preferences);
+      const createdRoadmap = await prisma.roadmap.create({
+        data: {
+          userId: req.user.id,
+          durationWeeks: generatedRoadmap.durationWeeks,
+          globalNotes: generatedRoadmap.globalNotes || [],
+          isActive: true,
+          weeks: {
+            create: generatedRoadmap.weeklyPlan.map((week: any) => ({
+              weekNumber: week.week,
+              phase: week.phase || 'Foundation',
+              focusAreas: week.focusAreas,
+              targets: week.targets,
+              expectedOutcomes: week.expectedOutcomes,
+              reasoning: week.reasoning,
+              priorityScore: week.priorityScore,
+              estimatedHours: week.estimatedHours
+            }))
+          }
+        },
+        include: {
+          weeks: {
+            include: { tasks: true },
+            orderBy: { weekNumber: 'asc' }
+          }
+        }
       });
+
+      return res.json(await buildRoadmapResponse(createdRoadmap, preferences, userProfile));
     }
 
     // Calculate progress for each week
@@ -275,33 +264,7 @@ export const getRoadmap = async (req: AuthRequest, res: Response) => {
       weekProgress.set(log.weekNumber, Math.max(existing, log.completionPercent));
     });
 
-    const weeklyPlan = roadmap.weeks.map(week => ({
-      id: week.id,
-      week: week.weekNumber,
-      phase: week.phase,
-      focusAreas: week.focusAreas,
-      targets: week.targets,
-      expectedOutcomes: week.expectedOutcomes,
-      estimatedHours: week.estimatedHours,
-      progress: weekProgress.get(week.weekNumber) || 0,
-      tasks: week.tasks.map(task => ({
-        id: task.id,
-        title: task.title,
-        description: task.description,
-        estimatedHours: task.estimatedHours,
-        isCompleted: task.isCompleted
-      }))
-    }));
-
-    const overallProgress = weeklyPlan.reduce((sum, w) => sum + w.progress, 0) / roadmap.weeks.length;
-
-    res.json({
-      id: roadmap.id,
-      durationWeeks: roadmap.durationWeeks,
-      overallProgress: Math.round(overallProgress * 100) / 100,
-      globalNotes: roadmap.globalNotes,
-      weeklyPlan
-    });
+    res.json(await buildRoadmapResponse(roadmap, preferences, userProfile, weekProgress));
   } catch (error) {
     console.error('Get roadmap error:', error);
     res.status(500).json({ error: 'Failed to fetch roadmap' });
@@ -420,38 +383,29 @@ export const saveRoadmapPreferences = async (req: AuthRequest, res: Response) =>
     console.log('User ID:', req.user.id);
     console.log('Preferences:', JSON.stringify(req.body, null, 2));
 
-    // Transform new simple form data to old format
-    let validatedData = req.body;
-    if (req.body.whatToLearn) {
-      // New simple form format
-      validatedData = {
-        learningPurpose: req.body.whatToLearn,
-        specificGoals: [req.body.whatToLearn], // Use the same value as goal
-        currentLevel: 'intermediate', // Default
-        timePerDay: req.body.hoursPerDay,
-        timePerWeek: req.body.hoursPerDay * 7,
-        learningStyle: 'mixed', // Default
-        targetDate: req.body.timeLeft, // Use timeLeft as targetDate
-        urgency: 'moderate', // Default
-        weakAreas: [], // Empty
-        additionalNotes: `Time commitment: ${req.body.hoursPerDay} hours/day, Timeline: ${req.body.timeLeft}`
-      };
-    }
-
-    const finalValidatedData = roadmapPreferencesSchema.parse(validatedData);
+    const finalValidatedData = roadmapPreferencesSchema.parse(req.body) as CourseRoadmapRequest;
     
     // Store preferences in memory (in mock mode)
     roadmapPreferences[req.user.id] = finalValidatedData;
+
+    const dbAvailable = await isDatabaseAvailable();
+    if (dbAvailable) {
+      await prisma.roadmap.updateMany({
+        where: { userId: req.user.id, isActive: true },
+        data: { isActive: false }
+      });
+    }
     
     // Generate user summary
     const userProfile = mockProfiles[req.user.id] || {};
     const summary = generateUserSummary(finalValidatedData, userProfile);
     
-    console.log('✅ Preferences saved');
-    console.log('User Summary:', summary);
+    console.log('✅ Preferences saved successfully');
+    console.log('📊 User Summary:', summary);
+    console.log('🤖 Gemini AI will generate personalized roadmap based on these preferences');
 
     res.json({
-      message: 'Preferences saved successfully',
+      message: 'Preferences saved successfully. Your personalized course roadmap will be generated using AI and enriched with YouTube videos.',
       summary: summary,
       preferences: finalValidatedData
     });
@@ -467,7 +421,7 @@ export const saveRoadmapPreferences = async (req: AuthRequest, res: Response) =>
 
 export const getRoadmapPreferences = async (req: AuthRequest, res: Response) => {
   try {
-    const preferences = roadmapPreferences[req.user.id];
+    const preferences = roadmapPreferences[req.user.id] as CourseRoadmapRequest | undefined;
     
     if (!preferences) {
       return res.status(404).json({ error: 'No preferences found', hasPreferences: false });

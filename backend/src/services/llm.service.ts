@@ -1,13 +1,32 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { config } from '../config/index.js';
 
+export interface CourseRoadmapRequest {
+  courseName: string;
+  currentLevel: 'beginner' | 'intermediate' | 'advanced' | 'expert';
+  timePerDay: number;
+  durationValue: number;
+  durationUnit: 'days' | 'weeks' | 'months';
+  experienceNotes?: string;
+  additionalNotes?: string;
+}
+
 let genAI: GoogleGenerativeAI | null = null;
 let geminiModel: any = null;
+let activeModelName = 'gemini-1.5-pro';
+const MODEL_CANDIDATES = ['gemini-1.5-pro', 'gemini-1.5-flash', 'gemini-pro'];
 
 if (config.geminiApiKey) {
-  genAI = new GoogleGenerativeAI(config.geminiApiKey);
-  geminiModel = genAI.getGenerativeModel({ model: 'gemini-pro' });
-  console.log('✅ Gemini AI initialized for roadmap generation');
+  try {
+    genAI = new GoogleGenerativeAI(config.geminiApiKey);
+    geminiModel = genAI.getGenerativeModel({ model: activeModelName });
+    console.log('✅ Gemini AI initialized successfully for roadmap generation');
+    console.log(`🤖 Default model: ${activeModelName}`);
+    console.log('🔑 API Key configured: ' + config.geminiApiKey.substring(0, 8) + '...');
+  } catch (error: any) {
+    console.error('❌ Failed to initialize Gemini AI:', error.message);
+    geminiModel = null;
+  }
 } else {
   console.log('⚠️  Gemini API key not found. Roadmap generation will use mock data.');
   console.log('   Add GEMINI_API_KEY to your .env file to enable AI-powered roadmaps.');
@@ -18,9 +37,15 @@ export const generateRoadmapWithAI = async (
   analytics: any,
   currentRoadmap?: any
 ) => {
+  console.log('🚀 Starting AI roadmap generation with Gemini');
+  console.log('📊 Profile:', { name: profile.name, college: profile.college, skills: profile.skills?.length || 0 });
+  
   if (!geminiModel) {
+    console.error('❌ Gemini model not available');
     throw new Error('Gemini API key not configured. Add GEMINI_API_KEY to your .env file.');
   }
+
+  console.log('✅ Gemini model ready, preparing prompt...');
 
   const prompt = `You are an AI placement preparation coach. Based on the student's profile and analytics, generate a personalized 16-week roadmap.
 
@@ -103,11 +128,13 @@ IMPORTANT: Output ONLY valid JSON. No markdown, no explanations, just pure JSON 
 Generate the complete 16-week roadmap now:`;
 
   try {
-    const result = await geminiModel.generateContent(prompt);
-    const response = await result.response;
-    const content = response.text();
+    console.log('📤 Sending request to Gemini AI...');
+    const startTime = Date.now();
+    const content = await generateWithModelFallback(prompt);
     
-    console.log('🤖 Gemini AI generated roadmap');
+    const duration = Date.now() - startTime;
+    console.log(`✅ Gemini AI response received in ${duration}ms`);
+    console.log(`📏 Response length: ${content.length} characters`);
     
     // Extract JSON from markdown code blocks if present
     let jsonString = content;
@@ -133,11 +160,213 @@ Generate the complete 16-week roadmap now:`;
       throw new Error('Invalid roadmap structure from AI');
     }
     
+    console.log('🎯 Successfully parsed AI roadmap:');
+    console.log(`   - Duration: ${roadmapData.durationWeeks} weeks`);
+    console.log(`   - Weeks planned: ${roadmapData.weeklyPlan.length}`);
+    console.log(`   - Global notes: ${roadmapData.globalNotes?.length || 0}`);
+    
     return roadmapData;
   } catch (error: any) {
     console.error('❌ Gemini AI error:', error.message);
+    if (error.message.includes('JSON')) {
+      console.error('❌ Failed to parse JSON response from Gemini');
+    }
     throw new Error(`Failed to generate roadmap with Gemini: ${error.message}`);
   }
+};
+
+const extractJsonPayload = (content: string) => {
+  let jsonString = content.trim();
+  const jsonMatch = content.match(/```json\n([\s\S]*?)\n```/) || content.match(/```\n([\s\S]*?)\n```/);
+  if (jsonMatch) {
+    jsonString = jsonMatch[1];
+  }
+  if (!jsonString.startsWith('{')) {
+    const startIndex = jsonString.indexOf('{');
+    const endIndex = jsonString.lastIndexOf('}');
+    if (startIndex !== -1 && endIndex !== -1) {
+      jsonString = jsonString.slice(startIndex, endIndex + 1);
+    }
+  }
+  return jsonString;
+};
+
+const generateWithModelFallback = async (prompt: string) => {
+  if (!genAI) {
+    throw new Error('Gemini API key not configured.');
+  }
+
+  const preferredModels = [activeModelName, ...MODEL_CANDIDATES.filter((name) => name !== activeModelName)];
+  let lastError = 'Unknown Gemini error';
+
+  for (const modelName of preferredModels) {
+    try {
+      const model = genAI.getGenerativeModel({
+        model: modelName,
+        generationConfig: {
+          temperature: 0.35,
+          topP: 0.9,
+          maxOutputTokens: 8192
+        }
+      });
+      const result = await model.generateContent(prompt);
+      const response = await result.response;
+      activeModelName = modelName;
+      geminiModel = model;
+      console.log(`✅ Gemini response generated with model: ${modelName}`);
+      return response.text();
+    } catch (error: any) {
+      lastError = error?.message || 'Unknown Gemini error';
+      console.warn(`⚠️ Gemini model ${modelName} failed: ${lastError}`);
+    }
+  }
+
+  throw new Error(`All Gemini models failed. Last error: ${lastError}`);
+};
+
+const isLowQualityCourseRoadmap = (roadmap: any, courseName: string) => {
+  if (!roadmap || !Array.isArray(roadmap.weeklyPlan) || roadmap.weeklyPlan.length === 0) {
+    return true;
+  }
+
+  const allFocusAreas = roadmap.weeklyPlan.flatMap((week: any) => week.focusAreas || []);
+  const allTargets = roadmap.weeklyPlan.flatMap((week: any) => week.targets || []);
+  const combined = [...allFocusAreas, ...allTargets].map((value) => String(value).toLowerCase());
+
+  const placeholderTokens = ['topic a', 'topic b', 'specific target', 'outcome 1', 'outcome 2'];
+  const hasPlaceholders = combined.some((text) => placeholderTokens.some((token) => text.includes(token)));
+  if (hasPlaceholders) {
+    return true;
+  }
+
+  const uniqueFocusCount = new Set(allFocusAreas.map((value: string) => String(value).toLowerCase())).size;
+  const minUniqueFocus = Math.max(6, Math.floor(roadmap.weeklyPlan.length * 1.5));
+  if (uniqueFocusCount < minUniqueFocus) {
+    return true;
+  }
+
+  const courseMentions = combined.filter((text) => text.includes(courseName.toLowerCase())).length;
+  const minimumMentions = Math.max(3, Math.floor(roadmap.weeklyPlan.length / 3));
+  if (courseMentions < minimumMentions) {
+    return true;
+  }
+
+  return false;
+};
+
+const durationUnitToDays: Record<CourseRoadmapRequest['durationUnit'], number> = {
+  days: 1,
+  weeks: 7,
+  months: 30
+};
+
+const buildPhaseLabel = (index: number, totalWeeks: number) => {
+  const progress = (index + 1) / totalWeeks;
+  if (progress <= 0.25) return 'Foundation';
+  if (progress <= 0.5) return 'Core Concepts';
+  if (progress <= 0.75) return 'Hands-On Projects';
+  return 'Mastery and Review';
+};
+
+export const generateCourseRoadmapWithAI = async (request: CourseRoadmapRequest) => {
+  const totalDays = request.durationValue * durationUnitToDays[request.durationUnit];
+  const durationWeeks = Math.max(1, Math.min(52, Math.ceil(totalDays / 7)));
+  const hoursPerWeek = Math.max(1, Math.round(request.timePerDay * 7));
+
+  if (!geminiModel && !genAI) {
+    throw new Error('Gemini API key not configured. Add GEMINI_API_KEY to your .env file.');
+  }
+
+  const prompt = `You are an expert course mentor and curriculum architect. Create a high-quality roadmap for ONE course/topic.
+
+Learner input:
+- Course/topic: ${request.courseName}
+- Current level: ${request.currentLevel}
+- Time available per day: ${request.timePerDay} hours
+- Time available per week: ${hoursPerWeek} hours
+- Completion window: ${request.durationValue} ${request.durationUnit}
+- Experience notes: ${request.experienceNotes || 'None provided'}
+- Additional notes: ${request.additionalNotes || 'None provided'}
+
+Instructions:
+1. Generate a realistic roadmap lasting exactly ${durationWeeks} weeks.
+2. Adapt pace and difficulty to the learner's level and time budget.
+3. Focus ONLY on ${request.courseName}; no generic placement prep content.
+4. Every week must include concrete and non-repetitive topics.
+5. Targets must be actionable and measurable (for example: build X, solve Y, implement Z, revise N).
+6. Include mini-project milestones at least every 2-3 weeks.
+7. Use progression from fundamentals to applied mastery.
+8. Weekly estimated hours should be close to ${hoursPerWeek}.
+9. Do not use placeholders such as "Topic A" or "Specific target".
+10. Output JSON only.
+
+Required JSON schema:
+{
+  "durationWeeks": ${durationWeeks},
+  "weeklyPlan": [
+    {
+      "week": 1,
+      "phase": "Foundation",
+      "focusAreas": ["Topic A", "Topic B"],
+      "targets": ["Specific target 1", "Specific target 2"],
+      "expectedOutcomes": ["Outcome 1", "Outcome 2"],
+      "reasoning": "Why this week matters",
+      "priorityScore": 0.9,
+      "estimatedHours": ${Math.min(40, hoursPerWeek)}
+    }
+  ],
+  "globalNotes": ["Tip 1", "Tip 2", "Tip 3"]
+}`;
+
+  const content = await generateWithModelFallback(prompt);
+  let parsed = JSON.parse(extractJsonPayload(content));
+  parsed.durationWeeks = durationWeeks;
+  parsed.weeklyPlan = (parsed.weeklyPlan || []).slice(0, durationWeeks).map((week: any, index: number) => ({
+    ...week,
+    week: index + 1,
+    phase: week.phase || buildPhaseLabel(index, durationWeeks),
+    estimatedHours: Math.min(40, Math.max(1, Math.round(week.estimatedHours || hoursPerWeek))),
+    focusAreas: Array.isArray(week.focusAreas) ? week.focusAreas.slice(0, 5) : [`${request.courseName} concepts`],
+    targets: Array.isArray(week.targets) ? week.targets.slice(0, 8) : [`Practice ${request.courseName} for ${hoursPerWeek} hours`],
+    expectedOutcomes: Array.isArray(week.expectedOutcomes) ? week.expectedOutcomes.slice(0, 5) : ['Stronger understanding of the topic']
+  }));
+
+  if (parsed.weeklyPlan.length !== durationWeeks) {
+    throw new Error(`Gemini returned ${parsed.weeklyPlan.length} weeks, expected ${durationWeeks}.`);
+  }
+
+  if (isLowQualityCourseRoadmap(parsed, request.courseName)) {
+    const refinePrompt = `The previous roadmap was too generic. Improve it with concrete, course-specific details.
+
+Course: ${request.courseName}
+Level: ${request.currentLevel}
+Weeks: ${durationWeeks}
+Hours/week: ${hoursPerWeek}
+
+Return JSON only and avoid repeated topics/targets.
+
+Previous roadmap JSON:
+${JSON.stringify(parsed)}`;
+
+    const refinedContent = await generateWithModelFallback(refinePrompt);
+    const refined = JSON.parse(extractJsonPayload(refinedContent));
+    refined.durationWeeks = durationWeeks;
+    refined.weeklyPlan = (refined.weeklyPlan || []).slice(0, durationWeeks).map((week: any, index: number) => ({
+      ...week,
+      week: index + 1,
+      phase: week.phase || buildPhaseLabel(index, durationWeeks),
+      estimatedHours: Math.min(40, Math.max(1, Math.round(week.estimatedHours || hoursPerWeek))),
+      focusAreas: Array.isArray(week.focusAreas) ? week.focusAreas.slice(0, 5) : [`${request.courseName} concepts`],
+      targets: Array.isArray(week.targets) ? week.targets.slice(0, 8) : [`Practice ${request.courseName} for ${hoursPerWeek} hours`],
+      expectedOutcomes: Array.isArray(week.expectedOutcomes) ? week.expectedOutcomes.slice(0, 5) : ['Stronger understanding of the topic']
+    }));
+
+    if (!isLowQualityCourseRoadmap(refined, request.courseName) && refined.weeklyPlan.length === durationWeeks) {
+      parsed = refined;
+    }
+  }
+
+  return parsed;
 };
 
 export const generateDashboardInsights = async (
@@ -183,9 +412,7 @@ Generate 3-5 concise, actionable insights in JSON format:
 Focus on consistency trends, skill gaps, and upcoming milestones. Output ONLY valid JSON array.`;
 
   try {
-    const result = await geminiModel.generateContent(prompt);
-    const response = await result.response;
-    const content = response.text();
+    const content = await generateWithModelFallback(prompt);
     
     const jsonMatch = content.match(/```json\n([\s\S]*?)\n```/) || content.match(/```\n([\s\S]*?)\n```/);
     const jsonString = jsonMatch ? jsonMatch[1] : content;

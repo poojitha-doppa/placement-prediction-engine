@@ -35,12 +35,24 @@ export interface PlacementSummary {
 }
 
 export interface WeeklyPlanItem {
+  id?: string;
   week: number;
+  phase?: string;
   focusAreas: string[];
   targets: string[];
   expectedOutcomes: string[];
+  reasoning?: string;
+  priorityScore?: number;
+  progress?: number;
   completionPercent: number; // 0–100
   estimatedHours: number;
+  tasks?: Array<{
+    id: string;
+    title: string;
+    description?: string;
+    estimatedHours?: number;
+    isCompleted: boolean;
+  }>;
 }
 
 export interface Roadmap {
@@ -48,6 +60,39 @@ export interface Roadmap {
   weeklyPlan: WeeklyPlanItem[];
   overallCompletion: number; // 0–100
   generatedAt: string;
+  overallProgress?: number;
+  id?: string | null;
+  userSummary?: string | null;
+  globalNotes?: string[];
+  preferences?: CourseRoadmapPreferences | null;
+  youtubeVideos?: YouTubeVideoRecommendation[];
+  hasPreferences?: boolean;
+}
+
+export interface CourseRoadmapPreferences {
+  courseName: string;
+  currentLevel: 'beginner' | 'intermediate' | 'advanced' | 'expert';
+  timePerDay: number;
+  durationValue: number;
+  durationUnit: 'days' | 'weeks' | 'months';
+  experienceNotes?: string;
+  additionalNotes?: string;
+}
+
+export interface YouTubeVideoRecommendation {
+  id: string;
+  title: string;
+  channelTitle: string;
+  description: string;
+  thumbnailUrl: string;
+  videoUrl: string;
+  publishedAt: string;
+}
+
+export interface RoadmapPreferencesResponse {
+  hasPreferences: boolean;
+  preferences?: CourseRoadmapPreferences;
+  summary?: string;
 }
 
 export interface SkillPoint {

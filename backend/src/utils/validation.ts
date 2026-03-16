@@ -29,7 +29,7 @@ export const profileUpdateSchema = z.object({
 });
 
 export const progressLogSchema = z.object({
-  weekNumber: z.number().int().min(1).max(16),
+  weekNumber: z.number().int().min(1).max(52),
   completionPercent: z.number().min(0).max(100),
   taskId: z.string().optional(),
   hoursSpent: z.number().min(0).optional(),
@@ -37,8 +37,8 @@ export const progressLogSchema = z.object({
 });
 
 export const weekSchema = z.object({
-  week: z.number().int().min(1).max(16),
-  phase: z.enum(['Foundation', 'Core', 'Advanced', 'Polish']).optional(),
+  week: z.number().int().min(1).max(52),
+  phase: z.string().min(2).max(80).optional(),
   focusAreas: z.array(z.string()).min(1).max(5),
   targets: z.array(z.string()).min(1).max(8),
   expectedOutcomes: z.array(z.string()).min(1).max(5),
@@ -48,9 +48,12 @@ export const weekSchema = z.object({
 });
 
 export const roadmapSchema = z.object({
-  durationWeeks: z.literal(16),
-  weeklyPlan: z.array(weekSchema).length(16),
+  durationWeeks: z.number().int().min(1).max(52),
+  weeklyPlan: z.array(weekSchema).min(1).max(52),
   globalNotes: z.array(z.string()).optional()
+}).refine((value) => value.weeklyPlan.length === value.durationWeeks, {
+  message: 'weeklyPlan length must match durationWeeks',
+  path: ['weeklyPlan']
 });
 
 export const insightSchema = z.object({
@@ -64,14 +67,11 @@ export const insightSchema = z.object({
 export const insightsResponseSchema = z.array(insightSchema).min(1).max(10);
 
 export const roadmapPreferencesSchema = z.object({
-  learningPurpose: z.string().min(10),
-  specificGoals: z.array(z.string()).min(1),
+  courseName: z.string().min(2).max(120),
   currentLevel: z.enum(['beginner', 'intermediate', 'advanced', 'expert']),
   timePerDay: z.number().min(0.5).max(24),
-  timePerWeek: z.number().min(1).max(168),
-  learningStyle: z.enum(['visual', 'reading', 'practical', 'mixed']),
-  targetDate: z.string().optional(),
-  urgency: z.enum(['relaxed', 'moderate', 'urgent']),
-  weakAreas: z.array(z.string()),
+  durationValue: z.number().int().min(1).max(365),
+  durationUnit: z.enum(['days', 'weeks', 'months']),
+  experienceNotes: z.string().max(500).optional(),
   additionalNotes: z.string().optional()
 });

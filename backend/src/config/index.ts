@@ -10,6 +10,7 @@ export const config = {
   nodeEnv: process.env.NODE_ENV || 'development',
   openaiApiKey: process.env.OPENAI_API_KEY || '',
   geminiApiKey: process.env.GEMINI_API_KEY || '',
+  youtubeApiKey: process.env.YOUTUBE_API_KEY || '',
   encryptionKey: process.env.ENCRYPTION_KEY || '',
   databaseUrl: process.env.DATABASE_URL || ''
 };
