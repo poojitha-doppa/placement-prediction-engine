@@ -257,7 +257,85 @@ const isLowQualityCourseRoadmap = (roadmap: any, courseName: string) => {
 const durationUnitToDays: Record<CourseRoadmapRequest['durationUnit'], number> = {
   days: 1,
   weeks: 7,
-  months: 30
+  months: 28
+};
+
+const normalizeTargetHours = (target: string, hoursPerWeek: number) =>
+  target.replace(/\b\d+(?:\.\d+)?\s*(?:hours?|hrs?)\b/gi, `${hoursPerWeek} hours`);
+
+const enforceWeekVariety = (
+  weeks: any[],
+  request: CourseRoadmapRequest,
+  hoursPerWeek: number,
+  durationWeeks: number
+) => {
+  const course = request.courseName;
+  const focusSeeds = [
+    `${course} fundamentals`,
+    `${course} syntax and core constructs`,
+    `${course} problem-solving drills`,
+    `${course} implementation patterns`,
+    `${course} debugging techniques`,
+    `${course} performance optimization`,
+    `${course} architecture and design`,
+    `${course} testing and validation`,
+    `${course} mini project development`,
+    `${course} revision and mastery`
+  ];
+
+  const targetSeeds = [
+    (week: number) => `Complete ${2 + (week % 4)} focused practice tasks around this week's ${course} topics`,
+    (week: number) => `Implement ${week % 2 === 0 ? 'one applied feature' : 'one hands-on exercise'} for week ${week}`,
+    (week: number) => `Create a weekly summary with key learnings and blockers for week ${week}`,
+    (week: number) => `Review mistakes from previous work and fix at least ${1 + (week % 3)} issues`,
+    (week: number) => `Ship a measurable milestone for week ${week} aligned to your current level`,
+  ];
+
+  return weeks.map((week: any, index: number) => {
+    const weekNumber = index + 1;
+    const normalizedTargets = Array.isArray(week.targets)
+      ? week.targets.slice(0, 8).map((target: string) => normalizeTargetHours(String(target), hoursPerWeek))
+      : [];
+
+    const hasStudyTarget = normalizedTargets.some((target: string) => /hour\(s\) per day|hours total this week|hours this week/i.test(target));
+    const mandatoryTimeTarget = `Study ${course} for ${request.timePerDay} hour(s) per day (${hoursPerWeek} hours total this week)`;
+    const actionTarget = targetSeeds[index % targetSeeds.length](weekNumber);
+    const milestoneTarget = weekNumber % 3 === 0
+      ? `Build a mini project milestone for week ${weekNumber}`
+      : `Complete a ${request.currentLevel} level checkpoint for week ${weekNumber}`;
+
+    const finalTargets = [
+      hasStudyTarget ? normalizedTargets[0] : mandatoryTimeTarget,
+      normalizedTargets[1] || actionTarget,
+      normalizedTargets[2] || milestoneTarget,
+      ...normalizedTargets.slice(3)
+    ];
+
+    const baseFocus = Array.isArray(week.focusAreas) ? week.focusAreas.slice(0, 5).map((item: any) => String(item)) : [];
+    const fallbackFocus = [
+      focusSeeds[index % focusSeeds.length],
+      focusSeeds[(index + 3) % focusSeeds.length],
+      weekNumber === durationWeeks ? `${course} final revision and capstone wrap-up` : focusSeeds[(index + 6) % focusSeeds.length]
+    ];
+
+    const finalFocus = [...baseFocus, ...fallbackFocus]
+      .filter(Boolean)
+      .map((item) => item.trim())
+      .filter((item, idx, arr) => arr.findIndex((x) => x.toLowerCase() === item.toLowerCase()) === idx)
+      .slice(0, 5);
+
+    return {
+      ...week,
+      week: weekNumber,
+      phase: week.phase || buildPhaseLabel(index, durationWeeks),
+      estimatedHours: hoursPerWeek,
+      focusAreas: finalFocus,
+      targets: finalTargets,
+      expectedOutcomes: Array.isArray(week.expectedOutcomes) && week.expectedOutcomes.length > 0
+        ? week.expectedOutcomes.slice(0, 5)
+        : [`Clear progress on week ${weekNumber} outcomes for ${course}`],
+    };
+  });
 };
 
 const buildPhaseLabel = (index: number, totalWeeks: number) => {
@@ -321,15 +399,7 @@ Required JSON schema:
   const content = await generateWithModelFallback(prompt);
   let parsed = JSON.parse(extractJsonPayload(content));
   parsed.durationWeeks = durationWeeks;
-  parsed.weeklyPlan = (parsed.weeklyPlan || []).slice(0, durationWeeks).map((week: any, index: number) => ({
-    ...week,
-    week: index + 1,
-    phase: week.phase || buildPhaseLabel(index, durationWeeks),
-    estimatedHours: Math.min(40, Math.max(1, Math.round(week.estimatedHours || hoursPerWeek))),
-    focusAreas: Array.isArray(week.focusAreas) ? week.focusAreas.slice(0, 5) : [`${request.courseName} concepts`],
-    targets: Array.isArray(week.targets) ? week.targets.slice(0, 8) : [`Practice ${request.courseName} for ${hoursPerWeek} hours`],
-    expectedOutcomes: Array.isArray(week.expectedOutcomes) ? week.expectedOutcomes.slice(0, 5) : ['Stronger understanding of the topic']
-  }));
+  parsed.weeklyPlan = enforceWeekVariety((parsed.weeklyPlan || []).slice(0, durationWeeks), request, hoursPerWeek, durationWeeks);
 
   if (parsed.weeklyPlan.length !== durationWeeks) {
     throw new Error(`Gemini returned ${parsed.weeklyPlan.length} weeks, expected ${durationWeeks}.`);
@@ -351,15 +421,7 @@ ${JSON.stringify(parsed)}`;
     const refinedContent = await generateWithModelFallback(refinePrompt);
     const refined = JSON.parse(extractJsonPayload(refinedContent));
     refined.durationWeeks = durationWeeks;
-    refined.weeklyPlan = (refined.weeklyPlan || []).slice(0, durationWeeks).map((week: any, index: number) => ({
-      ...week,
-      week: index + 1,
-      phase: week.phase || buildPhaseLabel(index, durationWeeks),
-      estimatedHours: Math.min(40, Math.max(1, Math.round(week.estimatedHours || hoursPerWeek))),
-      focusAreas: Array.isArray(week.focusAreas) ? week.focusAreas.slice(0, 5) : [`${request.courseName} concepts`],
-      targets: Array.isArray(week.targets) ? week.targets.slice(0, 8) : [`Practice ${request.courseName} for ${hoursPerWeek} hours`],
-      expectedOutcomes: Array.isArray(week.expectedOutcomes) ? week.expectedOutcomes.slice(0, 5) : ['Stronger understanding of the topic']
-    }));
+    refined.weeklyPlan = enforceWeekVariety((refined.weeklyPlan || []).slice(0, durationWeeks), request, hoursPerWeek, durationWeeks);
 
     if (!isLowQualityCourseRoadmap(refined, request.courseName) && refined.weeklyPlan.length === durationWeeks) {
       parsed = refined;

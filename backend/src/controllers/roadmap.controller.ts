@@ -24,7 +24,7 @@ const roadmapPreferences: any = {};
 const durationUnitToDays: Record<CourseRoadmapRequest['durationUnit'], number> = {
   days: 1,
   weeks: 7,
-  months: 30
+  months: 28
 };
 
 const calculateDurationWeeks = (preferences: CourseRoadmapRequest) => {
@@ -60,29 +60,64 @@ const buildMockRoadmap = (preferences: CourseRoadmapRequest) => {
   const estimatedHours = Math.max(1, Math.round(preferences.timePerDay * 7));
   const phaseSize = Math.max(1, Math.ceil(durationWeeks / 4));
   const phaseLabels = ['Foundation', 'Core Concepts', 'Hands-On Projects', 'Mastery and Review'];
+  const course = preferences.courseName;
+
+  const focusPool = [
+    `${course} fundamentals`,
+    `${course} core concepts`,
+    `${course} practical exercises`,
+    `${course} debugging and troubleshooting`,
+    `${course} project implementation`,
+    `${course} optimization`,
+    `${course} advanced patterns`,
+    `${course} revision and reinforcement`
+  ];
+
+  const outcomePool = [
+    `Stronger command over ${course} basics`,
+    `Improved ability to apply ${course} concepts`,
+    `More confidence solving ${course} tasks`,
+    `Clearer understanding of practical ${course} workflows`
+  ];
 
   const weeklyPlan = Array.from({ length: durationWeeks }, (_, index) => {
     const weekNumber = index + 1;
     const phase = phaseLabels[Math.min(phaseLabels.length - 1, Math.floor(index / phaseSize))];
+    const focusA = focusPool[index % focusPool.length];
+    const focusB = focusPool[(index + 2) % focusPool.length];
+    const focusC = weekNumber % 3 === 0 ? `${course} mini project` : `${course} review drills`;
+
+    const uniqueActionTarget = weekNumber % 4 === 1
+      ? `Solve ${2 + (weekNumber % 3)} focused practice tasks for week ${weekNumber}`
+      : weekNumber % 4 === 2
+      ? `Implement one practical ${course} feature in a small sandbox project`
+      : weekNumber % 4 === 3
+      ? `Debug and improve ${1 + (weekNumber % 3)} previous exercises from earlier weeks`
+      : `Create a concise revision sheet and self-test for week ${weekNumber}`;
+
+    const milestoneTarget = weekNumber % 3 === 0
+      ? `Build a mini project milestone for week ${weekNumber}`
+      : `Complete a ${preferences.currentLevel} level checkpoint for week ${weekNumber}`;
+
     return {
       id: `week-${weekNumber}`,
       week: weekNumber,
       phase,
       focusAreas: [
-        `${preferences.courseName} fundamentals`,
-        weekNumber <= Math.ceil(durationWeeks / 2) ? 'Concept drills' : 'Hands-on application',
-        weekNumber === durationWeeks ? 'Revision and capstone review' : 'Weekly practice'
+        focusA,
+        focusB,
+        weekNumber === durationWeeks ? `${course} final revision and capstone wrap-up` : focusC
       ],
       targets: [
-        `Study ${preferences.courseName} for ${estimatedHours} hours this week`,
-        `Complete a ${preferences.currentLevel} level checkpoint for week ${weekNumber}`,
-        weekNumber % 2 === 0 ? 'Build or refine a small practical exercise' : 'Summarize key takeaways in notes'
+        `Study ${course} for ${preferences.timePerDay} hour(s) per day (${estimatedHours} hours total this week)`,
+        uniqueActionTarget,
+        milestoneTarget
       ],
       expectedOutcomes: [
-        `Better command over ${preferences.courseName}`,
-        'Clear understanding of the week\'s concepts'
+        outcomePool[index % outcomePool.length],
+        weekNumber === durationWeeks ? `Ready to complete the ${course} learning goal` : 'Clear understanding of this week\'s concepts'
       ],
-      reasoning: `Week ${weekNumber} reinforces the ${phase.toLowerCase()} stage for ${preferences.courseName}.`,
+      reasoning: `Week ${weekNumber} focuses on a distinct ${phase.toLowerCase()} milestone for ${course}, aligned with your ${preferences.timePerDay} hour/day commitment and ${preferences.durationValue} ${preferences.durationUnit} timeline.`,
       priorityScore: Number(Math.max(0.5, 1 - index * 0.02).toFixed(2)),
       estimatedHours,
       progress: 0,
