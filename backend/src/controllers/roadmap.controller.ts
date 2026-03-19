@@ -261,6 +261,7 @@ export const getRoadmap = async (req: AuthRequest, res: Response) => {
       const createdRoadmap = await prisma.roadmap.create({
         data: {
           userId: req.user.id,
+          courseName: preferences.courseName,
           durationWeeks: generatedRoadmap.durationWeeks,
           globalNotes: generatedRoadmap.globalNotes || [],
           isActive: true,
@@ -425,10 +426,20 @@ export const saveRoadmapPreferences = async (req: AuthRequest, res: Response) =>
 
     const dbAvailable = await isDatabaseAvailable();
     if (dbAvailable) {
+      // Deactivate previous roadmaps
       await prisma.roadmap.updateMany({
         where: { userId: req.user.id, isActive: true },
         data: { isActive: false }
       });
+      
+      // Update user profile with current course name
+      await prisma.profile.upsert({
+        where: { userId: req.user.id },
+        update: { currentCourseName: finalValidatedData.courseName },
+        create: { userId: req.user.id, currentCourseName: finalValidatedData.courseName }
+      });
+      
+      console.log('💾 Saved course name to user profile:', finalValidatedData.courseName);
     }
     
     // Generate user summary

@@ -32,6 +32,7 @@ model Profile {
   year                  Int?
   cgpa                  Float?
   skills                String[]
+  currentCourseName     String?
   targetCompanies       String[]
   targetRoles           String[]
   availableHoursPerWeek Int      @default(10)
@@ -54,6 +55,7 @@ model Roadmap {
   userId         String        @db.ObjectId
   user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   
+  courseName     String?
   durationWeeks  Int           @default(16)
   globalNotes    String[]
   generatedAt    DateTime      @default(now())
