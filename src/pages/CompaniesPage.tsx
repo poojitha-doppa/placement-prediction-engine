@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Box,
   Typography,
@@ -15,6 +15,7 @@ import {
   Chip,
   Divider,
   useTheme,
+  Snackbar,
 } from '@mui/material';
 import {
   BarChart,
@@ -32,7 +33,9 @@ import { CompanyMatch } from '@/types';
 
 export default function CompaniesPage() {
   const theme = useTheme();
+  const queryClient = useQueryClient();
   const [selectedCompany, setSelectedCompany] = useState<CompanyMatch | null>(null);
+  const [refreshMessage, setRefreshMessage] = useState('');
 
   // Helper functions to handle different property names
   const getCompanyName = (company: any) => company.name || company.company || 'Unknown';
@@ -48,9 +51,22 @@ export default function CompaniesPage() {
   } = useQuery({
     queryKey: ['companyMatches'],
     queryFn: () => analyticsApi.getCompanyMatches(),
+    refetchInterval: 60000,
   });
 
   const companies = companyData;
+
+  const recomputeMutation = useMutation({
+    mutationFn: () => analyticsApi.recomputeCompanyMatches(),
+    onSuccess: async (data) => {
+      await queryClient.invalidateQueries({ queryKey: ['companyMatches'] });
+      await queryClient.invalidateQueries({ queryKey: ['placementSummary'] });
+      setRefreshMessage(data?.message || 'Company matches refreshed.');
+    },
+    onError: (mutationError: any) => {
+      setRefreshMessage(mutationError.response?.data?.message || mutationError.message || 'Failed to refresh company matches.');
+    }
+  });
 
   const handleViewDetails = (company: CompanyMatch) => {
     setSelectedCompany(company);
@@ -95,12 +111,49 @@ export default function CompaniesPage() {
     <Box>
       {/* Header */}
       <Box sx={{ mb: 4 }}>
-        <Typography variant="h4" fontWeight="bold" gutterBottom>
-          Companies & Opportunities
-        </Typography>
-        <Typography variant="body2" color="text.secondary">
-          Recommended companies ranked by fit score and success probability
-        </Typography>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 2, flexWrap: 'wrap' }}>
+          <Box>
+            <Typography variant="h4" fontWeight="bold" gutterBottom>
+              Companies & Opportunities
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Recommended companies ranked by fit score and success probability
+            </Typography>
+          </Box>
+          <Button
+            variant="contained"
+            onClick={() => recomputeMutation.mutate()}
+            disabled={recomputeMutation.isPending}
+          >
+            {recomputeMutation.isPending ? 'Refreshing...' : 'Recompute Matches'}
+          </Button>
+        </Box>
+        {companies?.lastComputedAt && (
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
+            Last recomputed: {new Date(companies.lastComputedAt).toLocaleString()}
+          </Typography>
+        )}
+        <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mt: 1.5 }}>
+          <Chip
+            size="small"
+            color={companies?.dataFreshness?.usingExternalSignals ? 'success' : 'default'}
+            label={companies?.dataFreshness?.usingExternalSignals ? 'Using synced external signals' : 'Using saved profile data only'}
+          />
+          {companies?.dataFreshness?.integrations?.github?.lastSyncAt && (
+            <Chip
+              size="small"
+              variant="outlined"
+              label={`GitHub synced ${new Date(companies.dataFreshness.integrations.github.lastSyncAt).toLocaleString()}`}
+            />
+          )}
+          {companies?.dataFreshness?.integrations?.leetcode?.lastSyncAt && (
+            <Chip
+              size="small"
+              variant="outlined"
+              label={`LeetCode synced ${new Date(companies.dataFreshness.integrations.leetcode.lastSyncAt).toLocaleString()}`}
+            />
+          )}
+        </Box>
       </Box>
 
       {/* Summary Stats */}
@@ -232,6 +285,13 @@ export default function CompaniesPage() {
             All Company Matches
           </Typography>
         </Box>
+        {(companies?.companies?.length || 0) === 0 && (
+          <Box sx={{ px: 2, pb: 2 }}>
+            <Alert severity="info">
+              {companies?.message || 'No company matches yet. Update your profile with target companies, roles, and skills to get useful recommendations.'}
+            </Alert>
+          </Box>
+        )}
         <CompanyTable
           companies={companies?.companies || []}
           onViewDetails={handleViewDetails}
@@ -294,6 +354,24 @@ export default function CompaniesPage() {
 
                 <Divider sx={{ my: 2 }} />
 
+                <Box sx={{ mb: 3 }}>
+                  <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                    Why This Match Appears
+                  </Typography>
+                  <Typography variant="body1">
+                    {selectedCompany.explanation || 'This recommendation was generated from your persisted profile, skills, and experience data.'}
+                  </Typography>
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, mt: 2 }}>
+                    {(selectedCompany.reasons || []).map((reason, idx) => (
+                      <Alert key={idx} severity="info" variant="outlined">
+                        {reason}
+                      </Alert>
+                    ))}
+                  </Box>
+                </Box>
+
+                <Divider sx={{ my: 2 }} />
+
                 {/* Required Skills */}
                 <Box sx={{ mb: 3 }}>
                   <Typography variant="subtitle2" color="text.secondary" gutterBottom>
@@ -332,6 +410,15 @@ export default function CompaniesPage() {
                     ))}
                   </Box>
                 </Box>
+
+                {selectedCompany.computedAt && (
+                  <>
+                    <Divider sx={{ my: 2 }} />
+                    <Typography variant="caption" color="text.secondary">
+                      Match recomputed on {new Date(selectedCompany.computedAt).toLocaleString()}
+                    </Typography>
+                  </>
+                )}
               </Box>
             </DialogContent>
             <DialogActions>
@@ -343,6 +430,20 @@ export default function CompaniesPage() {
           </>
         )}
       </Dialog>
+
+      <Snackbar
+        open={Boolean(refreshMessage)}
+        autoHideDuration={4000}
+        onClose={() => setRefreshMessage('')}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+      >
+        <Alert
+          severity={refreshMessage.toLowerCase().includes('failed') ? 'error' : 'success'}
+          onClose={() => setRefreshMessage('')}
+        >
+          {refreshMessage}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 }

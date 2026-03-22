@@ -20,9 +20,9 @@ import {
   CloudUpload,
   GitHub,
   Code,
+  Sync,
 } from '@mui/icons-material';
 import { useAuth } from '../contexts/AuthContext';
-import { api } from '@/api/mockApi';
 import { profileApi } from '@/api/api';
 import { StudentProfile } from '@/types';
 
@@ -35,6 +35,8 @@ export default function ProfilePage() {
   const [newCompany, setNewCompany] = useState('');
   const [newRole, setNewRole] = useState('');
   const [showSuccess, setShowSuccess] = useState(false);
+  const [successMessage, setSuccessMessage] = useState('Profile updated successfully!');
+  const [errorMessage, setErrorMessage] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [formData, setFormData] = useState<Partial<StudentProfile>>({
     name: '',
@@ -68,6 +70,12 @@ export default function ProfilePage() {
   } = useQuery({
     queryKey: ['studentProfile'],
     queryFn: () => profileApi.getProfile(),
+  });
+
+  const { data: integrationStatusData } = useQuery({
+    queryKey: ['integrationStatus'],
+    queryFn: () => profileApi.getIntegrationStatus(),
+    retry: false,
   });
 
   // Set form data when profile loads
@@ -110,7 +118,39 @@ export default function ProfilePage() {
     }
   }, [profileData, user, isLoading]);
 
+  useEffect(() => {
+    if (!integrationStatusData) {
+      return;
+    }
+
+    setFormData((prev) => ({
+      ...prev,
+      integrationStatus: {
+        github: integrationStatusData.providers.github.connected
+          ? 'connected'
+          : integrationStatusData.providers.github.syncStatus === 'syncing'
+          ? 'pending'
+          : 'not-connected',
+        leetcode: integrationStatusData.providers.leetcode.connected
+          ? 'connected'
+          : integrationStatusData.providers.leetcode.syncStatus === 'syncing'
+          ? 'pending'
+          : 'not-connected',
+        resume: prev.integrationStatus?.resume || 'not-uploaded',
+      },
+    }));
+  }, [integrationStatusData]);
+
   const profile = profileData;
+
+  const extractUsername = (urlOrUsername: string | undefined) =>
+    (urlOrUsername || '').trim().replace(/\/+$/, '').split('/').pop() || '';
+
+  const getErrorMessage = (error: any, fallback: string) =>
+    error?.response?.data?.message ||
+    error?.response?.data?.error ||
+    error?.message ||
+    fallback;
 
   const handleInputChange = (field: keyof StudentProfile, value: any) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
@@ -198,12 +238,12 @@ export default function ProfilePage() {
     onSuccess: (data) => {
       setFormData((prev) => ({ ...prev, resumeUrl: data.resumeUrl }));
       queryClient.invalidateQueries({ queryKey: ['studentProfile'] });
-      alert(`Resume uploaded successfully!`);
+      setSuccessMessage(data?.warning || 'Resume uploaded successfully!');
+      setShowSuccess(true);
     },
     onError: (error: any) => {
       console.error('Resume upload error:', error);
-      const errorMsg = error.response?.data?.error || error.message || 'Unknown error';
-      alert(`Failed to upload resume: ${errorMsg}. Please try logging in again.`);
+      setErrorMessage(getErrorMessage(error, 'Failed to upload resume.'));
     }
   });
 
@@ -213,13 +253,13 @@ export default function ProfilePage() {
       // Validate file type
       const allowedTypes = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
       if (!allowedTypes.includes(file.type)) {
-        alert('Please upload a PDF or DOC file');
+        setErrorMessage('Please upload a PDF or DOC file.');
         return;
       }
       
       // Validate file size (5MB max)
       if (file.size > 5 * 1024 * 1024) {
-        alert('File size must be less than 5MB');
+        setErrorMessage('File size must be less than 5MB.');
         return;
       }
       
@@ -229,7 +269,7 @@ export default function ProfilePage() {
 
   const handleSave = () => {
     if (!formData.name || !formData.college || !formData.branch) {
-      alert('Please fill in all required fields (Name, College, Branch)');
+      setErrorMessage('Please fill in all required fields: Name, College, and Branch.');
       return;
     }
     
@@ -246,8 +286,8 @@ export default function ProfilePage() {
       targetCompanies: formData.targets?.companies || [],
       targetRoles: formData.targets?.roles || [],
       availableHoursPerWeek: 20, // default value
-      githubUsername: formData.githubUrl?.split('/').pop() || null,
-      leetcodeUsername: formData.leetcodeUrl?.split('/').pop() || null,
+      githubUsername: extractUsername(formData.githubUrl) || null,
+      leetcodeUsername: extractUsername(formData.leetcodeUrl) || null,
       codeforcesUsername: null,
       leetcodeSolved: formData.leetcodeSolved || 0,
       minPackageLPA: formData.targets?.minPackageLPA || 0
@@ -261,15 +301,46 @@ export default function ProfilePage() {
       queryClient.invalidateQueries({ queryKey: ['studentProfile'] });
       queryClient.invalidateQueries({ queryKey: ['placementSummary'] });
       queryClient.invalidateQueries({ queryKey: ['companyMatches'] });
+      setSuccessMessage('Profile updated successfully!');
       setShowSuccess(true);
       setIsSaving(false);
     }).catch((error) => {
       console.error('Update error:', error);
       console.error('Error response:', error.response?.data);
-      const errorMsg = error.response?.data?.error || error.message || 'Unknown error';
-      alert(`Failed to update profile: ${errorMsg}`);
+      setErrorMessage(getErrorMessage(error, 'Failed to update profile.'));
       setIsSaving(false);
     });
+  };
+
+  const integrationSyncMutation = useMutation({
+    mutationFn: ({ provider, username }: { provider: 'github' | 'leetcode'; username: string }) =>
+      profileApi.syncIntegration(provider, username),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['studentProfile'] });
+      queryClient.invalidateQueries({ queryKey: ['integrationStatus'] });
+      queryClient.invalidateQueries({ queryKey: ['placementSummary'] });
+      queryClient.invalidateQueries({ queryKey: ['skillAnalytics'] });
+      queryClient.invalidateQueries({ queryKey: ['analytics'] });
+      queryClient.invalidateQueries({ queryKey: ['companyMatches'] });
+      setSuccessMessage(data?.warning || 'Integration sync completed successfully!');
+      setShowSuccess(true);
+    },
+    onError: (syncError: any) => {
+      setErrorMessage(getErrorMessage(syncError, 'Integration sync failed.'));
+    },
+  });
+
+  const handleIntegrationSync = (provider: 'github' | 'leetcode') => {
+    const username = provider === 'github'
+      ? extractUsername(formData.githubUrl)
+      : extractUsername(formData.leetcodeUrl);
+
+    if (!username) {
+      setErrorMessage(`Add your ${provider === 'github' ? 'GitHub' : 'LeetCode'} username or URL first.`);
+      return;
+    }
+
+    integrationSyncMutation.mutate({ provider, username });
   };
 
   const getStatusColor = (
@@ -317,6 +388,12 @@ export default function ProfilePage() {
         <Typography variant="body2" color="text.secondary">
           Keep your profile updated for accurate placement predictions
         </Typography>
+        {(integrationStatusData?.providers.github.syncStatus === 'error' ||
+          integrationStatusData?.providers.leetcode.syncStatus === 'error') && (
+          <Alert severity="warning" sx={{ mt: 2 }}>
+            One or more external syncs failed recently. Check the provider-specific message below and retry after fixing the username or service issue.
+          </Alert>
+        )}
       </Box>
 
       <Grid container spacing={3}>
@@ -483,7 +560,37 @@ export default function ProfilePage() {
                     }
                     placeholder="https://github.com/username"
                   />
+                  <Button
+                    variant="outlined"
+                    onClick={() => handleIntegrationSync('github')}
+                    disabled={integrationSyncMutation.isPending}
+                    startIcon={integrationSyncMutation.isPending ? <CircularProgress size={16} /> : <Sync />}
+                  >
+                    Sync
+                  </Button>
                 </Box>
+                <Box sx={{ mt: 1, display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                  <Chip
+                    size="small"
+                    label={`GitHub: ${formData.integrationStatus?.github || 'not-connected'}`}
+                    color={getStatusColor(formData.integrationStatus?.github || 'not-connected')}
+                  />
+                  {integrationStatusData?.providers.github.lastSyncAt && (
+                    <Typography variant="caption" color="text.secondary">
+                      Last sync: {new Date(integrationStatusData.providers.github.lastSyncAt).toLocaleString()}
+                    </Typography>
+                  )}
+                  {integrationStatusData?.providers.github.stats?.publicRepos !== undefined && (
+                    <Typography variant="caption" color="text.secondary">
+                      Repos: {integrationStatusData.providers.github.stats.publicRepos}, Stars: {integrationStatusData.providers.github.stats.totalStars || 0}
+                    </Typography>
+                  )}
+                </Box>
+                {integrationStatusData?.providers.github.syncError && (
+                  <Alert severity="warning" sx={{ mt: 1 }}>
+                    {integrationStatusData.providers.github.syncError}
+                  </Alert>
+                )}
               </Grid>
               <Grid item xs={12}>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
@@ -497,7 +604,37 @@ export default function ProfilePage() {
                     }
                     placeholder="https://leetcode.com/username"
                   />
+                  <Button
+                    variant="outlined"
+                    onClick={() => handleIntegrationSync('leetcode')}
+                    disabled={integrationSyncMutation.isPending}
+                    startIcon={integrationSyncMutation.isPending ? <CircularProgress size={16} /> : <Sync />}
+                  >
+                    Sync
+                  </Button>
                 </Box>
+                <Box sx={{ mt: 1, display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                  <Chip
+                    size="small"
+                    label={`LeetCode: ${formData.integrationStatus?.leetcode || 'not-connected'}`}
+                    color={getStatusColor(formData.integrationStatus?.leetcode || 'not-connected')}
+                  />
+                  {integrationStatusData?.providers.leetcode.lastSyncAt && (
+                    <Typography variant="caption" color="text.secondary">
+                      Last sync: {new Date(integrationStatusData.providers.leetcode.lastSyncAt).toLocaleString()}
+                    </Typography>
+                  )}
+                  {integrationStatusData?.providers.leetcode.stats?.totalSolved !== undefined && (
+                    <Typography variant="caption" color="text.secondary">
+                      Solved: {integrationStatusData.providers.leetcode.stats.totalSolved}, Rank: {integrationStatusData.providers.leetcode.stats.ranking || 'n/a'}
+                    </Typography>
+                  )}
+                </Box>
+                {integrationStatusData?.providers.leetcode.syncError && (
+                  <Alert severity="warning" sx={{ mt: 1 }}>
+                    {integrationStatusData.providers.leetcode.syncError}
+                  </Alert>
+                )}
               </Grid>
             </Grid>
           </Paper>
@@ -702,7 +839,18 @@ export default function ProfilePage() {
         anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
       >
         <Alert severity="success" onClose={() => setShowSuccess(false)}>
-          Profile updated successfully!
+          {successMessage}
+        </Alert>
+      </Snackbar>
+
+      <Snackbar
+        open={Boolean(errorMessage)}
+        autoHideDuration={5000}
+        onClose={() => setErrorMessage('')}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+      >
+        <Alert severity="error" onClose={() => setErrorMessage('')}>
+          {errorMessage}
         </Alert>
       </Snackbar>
     </Box>

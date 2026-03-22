@@ -25,12 +25,47 @@ export interface StudentProfile {
   };
 }
 
+export interface IntegrationProviderStatus {
+  provider: 'github' | 'leetcode';
+  connected: boolean;
+  username: string | null;
+  lastSyncAt: string | null;
+  syncStatus: string;
+  syncError: string | null;
+  stats: Record<string, any> | null;
+}
+
+export interface IntegrationStatusResponse {
+  providers: {
+    github: IntegrationProviderStatus;
+    leetcode: IntegrationProviderStatus;
+  };
+}
+
 export interface PlacementSummary {
   overallPlacementProb: number; // 0–1
   highPackageProb20LpaPlus: number; // 0–1
   companyProbs: { [company: string]: number };
   totalProblemsSolved: number;
   currentStreak: number;
+  dataFreshness?: {
+    integrations: {
+      github: {
+        connected: boolean;
+        username: string;
+        lastSyncAt: string | null;
+        syncStatus: string;
+      } | null;
+      leetcode: {
+        connected: boolean;
+        username: string;
+        lastSyncAt: string | null;
+        syncStatus: string;
+      } | null;
+    };
+    companyMatchesLastComputedAt: string | null;
+    usingExternalSignals: boolean;
+  };
   lastUpdated: string;
 }
 
@@ -67,6 +102,9 @@ export interface Roadmap {
   preferences?: CourseRoadmapPreferences | null;
   youtubeVideos?: YouTubeVideoRecommendation[];
   hasPreferences?: boolean;
+  roadmapType?: 'system' | 'manual';
+  title?: string;
+  aiGenerated?: boolean;
 }
 
 export interface CourseRoadmapPreferences {
@@ -93,6 +131,17 @@ export interface RoadmapPreferencesResponse {
   hasPreferences: boolean;
   preferences?: CourseRoadmapPreferences;
   summary?: string;
+}
+
+export interface ManualRoadmapPayload {
+  title: string;
+  courseName: string;
+  currentLevel: CourseRoadmapPreferences['currentLevel'];
+  timePerDay: number;
+  durationValue: number;
+  durationUnit: CourseRoadmapPreferences['durationUnit'];
+  globalNotes: string[];
+  weeklyPlan: WeeklyPlanItem[];
 }
 
 export interface SkillPoint {
@@ -138,11 +187,37 @@ export interface CompanyMatch {
   requiredSkills: string[];
   matchedSkills: string[];
   hiringStatus?: string; // Active, Paused, etc.
+  computedAt?: string;
+  reasons?: string[];
+  explanation?: string;
 }
 
 export interface CompanyMatchesResponse {
   rankedCompanies: CompanyMatch[];
   totalCompanies: number;
+  companies?: CompanyMatch[];
+  totalMatches?: number;
+  highFitCount?: number;
+  maxPackage?: number;
+  lastComputedAt?: string | null;
+  dataFreshness?: {
+    integrations: {
+      github: {
+        connected: boolean;
+        username: string;
+        lastSyncAt: string | null;
+        syncStatus: string;
+      } | null;
+      leetcode: {
+        connected: boolean;
+        username: string;
+        lastSyncAt: string | null;
+        syncStatus: string;
+      } | null;
+    };
+    usingExternalSignals: boolean;
+  };
+  message?: string;
 }
 
 export interface TopicPriority {

@@ -1,11 +1,17 @@
-import html2canvas from 'html2canvas';
-import jsPDF from 'jspdf';
-
 export interface ExportOptions {
   filename?: string;
   orientation?: 'portrait' | 'landscape';
   quality?: number;
 }
+
+const loadPdfDependencies = async () => {
+  const [{ default: html2canvas }, { default: jsPDF }] = await Promise.all([
+    import('html2canvas'),
+    import('jspdf'),
+  ]);
+
+  return { html2canvas, jsPDF };
+};
 
 /**
  * Export a DOM element to PDF
@@ -23,6 +29,7 @@ export async function exportToPdf(
   } = options;
 
   try {
+    const { html2canvas, jsPDF } = await loadPdfDependencies();
     const element = document.getElementById(elementId);
     if (!element) {
       throw new Error(`Element with id "${elementId}" not found`);
@@ -112,6 +119,7 @@ export async function exportComprehensiveReport(
     analytics?: HTMLElement;
   }
 ): Promise<void> {
+  const { html2canvas, jsPDF } = await loadPdfDependencies();
   const pdf = new jsPDF({
     orientation: 'portrait',
     unit: 'mm',

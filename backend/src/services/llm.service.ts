@@ -13,8 +13,13 @@ export interface CourseRoadmapRequest {
 
 let genAI: GoogleGenerativeAI | null = null;
 let geminiModel: any = null;
-let activeModelName = 'gemini-1.5-pro';
-const MODEL_CANDIDATES = ['gemini-1.5-pro', 'gemini-1.5-flash', 'gemini-pro'];
+let activeModelName = 'gemini-2.5-flash';
+const MODEL_CANDIDATES = [
+  'gemini-2.5-flash',
+  'gemini-2.5-pro',
+  'gemini-2.0-flash',
+  'gemini-2.0-flash-001'
+];
 
 if (config.geminiApiKey) {
   try {
@@ -28,8 +33,8 @@ if (config.geminiApiKey) {
     geminiModel = null;
   }
 } else {
-  console.log('⚠️  Gemini API key not found. Roadmap generation will use mock data.');
-  console.log('   Add GEMINI_API_KEY to your .env file to enable AI-powered roadmaps.');
+  console.log('⚠️  Gemini API key not found. AI roadmap and dashboard insights will be unavailable.');
+  console.log('   Add GEMINI_API_KEY to your .env file to enable AI-powered features.');
 }
 
 export const generateRoadmapWithAI = async (
@@ -428,7 +433,10 @@ ${JSON.stringify(parsed)}`;
     }
   }
 
-  return parsed;
+  return {
+    ...parsed,
+    aiGenerated: true
+  };
 };
 
 export const generateDashboardInsights = async (
@@ -437,16 +445,7 @@ export const generateDashboardInsights = async (
   analytics: any
 ) => {
   if (!geminiModel) {
-    // Return mock insights if no API key
-    return [
-      {
-        type: 'info',
-        title: 'Welcome to your dashboard',
-        message: 'Keep tracking your progress to get AI-powered insights.',
-        recommendedAction: null,
-        priority: 'low'
-      }
-    ];
+    throw new Error('Gemini API key not configured. AI dashboard insights are unavailable.');
   }
 
   const prompt = `You are an AI career coach analyzing a student's placement prep progress.
@@ -482,14 +481,6 @@ Focus on consistency trends, skill gaps, and upcoming milestones. Output ONLY va
     return JSON.parse(jsonString);
   } catch (error) {
     console.error('Error generating dashboard insights:', error);
-    return [
-      {
-        type: 'info',
-        title: 'Keep up the good work',
-        message: 'Continue tracking your progress for personalized insights.',
-        recommendedAction: null,
-        priority: 'low'
-      }
-    ];
+    throw error;
   }
 };

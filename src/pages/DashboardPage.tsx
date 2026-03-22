@@ -1,4 +1,5 @@
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import React from 'react';
 import {
   Box,
   Grid,
@@ -8,6 +9,8 @@ import {
   Skeleton,
   Alert,
   useTheme,
+  Chip,
+  Snackbar,
 } from '@mui/material';
 import {
   Refresh,
@@ -17,6 +20,9 @@ import {
   EmojiEvents,
   School,
   Logout,
+  CheckCircle,
+  WarningAmber,
+  Error as ErrorIcon,
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
@@ -28,9 +34,10 @@ import type { CompanyMatch } from '@/types';
 
 export default function DashboardPage() {
   const theme = useTheme();
+  const queryClient = useQueryClient();
   const navigate = useNavigate();
   const { logout } = useAuth();
-
+  const [refreshMessage, setRefreshMessage] = React.useState('');
   // Fetch profile first to check if it's complete
   const {
     data: profileData,
@@ -38,6 +45,7 @@ export default function DashboardPage() {
   } = useQuery({
     queryKey: ['studentProfile'],
     queryFn: () => profileApi.getProfile(),
+    refetchInterval: 60000,
   });
 
   // Fetch data using React Query
@@ -48,6 +56,7 @@ export default function DashboardPage() {
   } = useQuery({
     queryKey: ['placementSummary'],
     queryFn: () => analyticsApi.getPlacementSummary(),
+    refetchInterval: 60000,
   });
 
   const {
@@ -57,6 +66,7 @@ export default function DashboardPage() {
   } = useQuery({
     queryKey: ['skillAnalytics'],
     queryFn: () => analyticsApi.getSkillAnalytics(),
+    refetchInterval: 60000,
   });
 
   const {
@@ -66,8 +76,29 @@ export default function DashboardPage() {
   } = useQuery({
     queryKey: ['companyMatches'],
     queryFn: () => analyticsApi.getCompanyMatches(),
+    refetchInterval: 60000,
   });
 
+  const {
+    data: mlHealth,
+  } = useQuery({
+    queryKey: ['mlHealth'],
+    queryFn: () => analyticsApi.getMLHealth(),
+    refetchInterval: 15000,
+  });
+
+  const {
+    data: mlData,
+    isLoading: mlLoading,
+    error: mlQueryError,
+  } = useQuery({
+    queryKey: ['mlAnalytics'],
+    queryFn: () => analyticsApi.getAnalytics(),
+    retry: false,
+    refetchInterval: 60000,
+  });
+
+  const mlError = mlQueryError ? String((mlQueryError as any)?.message || 'Failed to fetch ML analytics') : null;
   const profile = profileData;
   const summary = summaryData;
   const skills = skillData;
@@ -76,8 +107,29 @@ export default function DashboardPage() {
   // Show dashboard with data - no longer blocking on incomplete profile
   // The profile is pre-populated with demo data
 
+  const refreshMutation = useMutation({
+    mutationFn: async () => {
+      const result = await analyticsApi.recomputeCompanyMatches();
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['studentProfile'] }),
+        queryClient.invalidateQueries({ queryKey: ['placementSummary'] }),
+        queryClient.invalidateQueries({ queryKey: ['skillAnalytics'] }),
+        queryClient.invalidateQueries({ queryKey: ['companyMatches'] }),
+        queryClient.invalidateQueries({ queryKey: ['mlAnalytics'] }),
+        queryClient.invalidateQueries({ queryKey: ['mlHealth'] }),
+      ]);
+      return result;
+    },
+    onSuccess: (data) => {
+      setRefreshMessage(data?.message || 'Dashboard data refreshed.');
+    },
+    onError: (mutationError: any) => {
+      setRefreshMessage(mutationError.response?.data?.message || mutationError.message || 'Failed to refresh dashboard data.');
+    }
+  });
+
   const handleRefresh = () => {
-    window.location.reload();
+    refreshMutation.mutate();
   };
 
   const handleLogout = () => {
@@ -85,14 +137,25 @@ export default function DashboardPage() {
     navigate('/login');
   };
 
+  const handleExportDashboardPdf = async () => {
+    const { exportDashboardToPdf } = await import('@/utils/pdfExport');
+    await exportDashboardToPdf();
+  };
+
+  const handleExportFullReport = async () => {
+    const { exportComprehensiveReport } = await import('@/utils/pdfExport');
+    await exportComprehensiveReport({
+      dashboard: document.getElementById('dashboard-content') || undefined,
+      roadmap: document.getElementById('roadmap-content') || undefined,
+      analytics: document.getElementById('analytics-content') || undefined,
+    });
+  };
+
   const topCompanies = (companies?.rankedCompanies || []).slice(0, 3);
-  
-  // Add console logging for debugging
-  console.log('Dashboard Data:', { profile, summary, skills, companies });
-  console.log('Loading States:', { profileLoading, summaryLoading, skillLoading, companyLoading });
-  
+  const companyCount = companies?.rankedCompanies?.length || 0;
+
   // Show loading state if any critical data is still loading
-  if (profileLoading || summaryLoading || skillLoading || companyLoading) {
+  if (profileLoading || summaryLoading || skillLoading || companyLoading || mlLoading) {
     return (
       <Box sx={{ p: 4 }}>
         <Typography variant="h4" gutterBottom>Loading Dashboard...</Typography>
@@ -116,7 +179,7 @@ export default function DashboardPage() {
   }
 
   return (
-    <Box>
+    <Box id="dashboard-content">
       {/* Header with gradient background */}
       <Box
         sx={{
@@ -183,8 +246,9 @@ export default function DashboardPage() {
                   }}
                   startIcon={<Refresh />}
                   onClick={handleRefresh}
+                  disabled={refreshMutation.isPending}
                 >
-                  Refresh Data
+                  {refreshMutation.isPending ? 'Refreshing...' : 'Refresh Data'}
                 </Button>
                 <Button
                   variant="outlined"
@@ -232,8 +296,48 @@ export default function DashboardPage() {
           <Typography variant="body2" color="text.secondary">
             Your personalized placement preparation insights
           </Typography>
+          <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mt: 1.5 }}>
+            <Chip
+              size="small"
+              color={summary?.dataFreshness?.usingExternalSignals ? 'success' : 'default'}
+              label={summary?.dataFreshness?.usingExternalSignals ? 'External sync data active' : 'Profile-only data'}
+            />
+            {summary?.dataFreshness?.integrations?.github?.lastSyncAt && (
+              <Chip
+                size="small"
+                variant="outlined"
+                label={`GitHub ${new Date(summary.dataFreshness.integrations.github.lastSyncAt).toLocaleDateString()}`}
+              />
+            )}
+            {summary?.dataFreshness?.integrations?.leetcode?.lastSyncAt && (
+              <Chip
+                size="small"
+                variant="outlined"
+                label={`LeetCode ${new Date(summary.dataFreshness.integrations.leetcode.lastSyncAt).toLocaleDateString()}`}
+              />
+            )}
+            {summary?.dataFreshness?.companyMatchesLastComputedAt && (
+              <Chip
+                size="small"
+                variant="outlined"
+                label={`Matches ${new Date(summary.dataFreshness.companyMatchesLastComputedAt).toLocaleDateString()}`}
+              />
+            )}
+          </Box>
         </Box>
         <Box sx={{ display: 'flex', gap: 2 }}>
+          <Button
+            variant="outlined"
+            onClick={handleExportFullReport}
+          >
+            Export Full Report
+          </Button>
+          <Button
+            variant="outlined"
+            onClick={handleExportDashboardPdf}
+          >
+            Export PDF
+          </Button>
           <Button
             variant="outlined"
             startIcon={<Person />}
@@ -245,14 +349,84 @@ export default function DashboardPage() {
             variant="contained"
             startIcon={<Refresh />}
             onClick={handleRefresh}
+            disabled={refreshMutation.isPending}
           >
-            Refresh Data
+            {refreshMutation.isPending ? 'Refreshing...' : 'Refresh Data'}
           </Button>
         </Box>
       </Box>
 
       {/* KPI Cards */}
       <Grid container spacing={3} sx={{ mb: 4 }}>
+        {/* ML Placement Probability */}
+        <Grid item xs={12} sm={6} md={3}>
+          {mlLoading ? (
+            <Skeleton variant="rectangular" height={150} />
+          ) : mlError ? (
+            <Alert severity="warning" sx={{ height: 150 }}>
+              ML service unavailable
+            </Alert>
+          ) : (
+            <KpiCard
+              title="ML Placement Probability"
+              value={`${((mlData?.probability || 0) * 100).toFixed(0)}%`}
+              subtitle="Based on ML model"
+              trend={{ value: mlData?.probability > 0.7 ? 15 : 5, direction: 'up' }}
+              icon={<TrendingUp />}
+              color="success"
+            />
+          )}
+        </Grid>
+
+        {/* Risk Level Badge */}
+        <Grid item xs={12} sm={6} md={3}>
+          {mlLoading ? (
+            <Skeleton variant="rectangular" height={150} />
+          ) : mlError ? (
+            <Skeleton variant="rectangular" height={150} />
+          ) : (
+            <Paper
+              elevation={0}
+              sx={{
+                p: 2.5,
+                border: `1px solid ${theme.palette.divider}`,
+                height: 150,
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'center',
+                alignItems: 'center',
+                gap: 2,
+              }}
+            >
+              <Typography variant="body2" color="text.secondary">
+                Risk Level
+              </Typography>
+              <Chip
+                label={mlData?.risk_level?.toUpperCase() || 'UNKNOWN'}
+                icon={
+                  mlData?.risk_level === 'high'
+                    ? <ErrorIcon />
+                    : mlData?.risk_level === 'medium'
+                    ? <WarningAmber />
+                    : <CheckCircle />
+                }
+                color={
+                  mlData?.risk_level === 'high'
+                    ? 'error'
+                    : mlData?.risk_level === 'medium'
+                    ? 'warning'
+                    : 'success'
+                }
+                size="medium"
+                sx={{ minWidth: 120, height: 36, fontSize: 12 }}
+              />
+              <Typography variant="caption" color="text.secondary">
+                Mean Prob: {((mlData?.mean_probability || 0) * 100).toFixed(1)}%
+              </Typography>
+            </Paper>
+          )}
+        </Grid>
+
         <Grid item xs={12} sm={6} md={3}>
           {summaryLoading ? (
             <Skeleton variant="rectangular" height={150} />
@@ -281,6 +455,84 @@ export default function DashboardPage() {
             />
           )}
         </Grid>
+      </Grid>
+
+      {mlHealth && !mlHealth.running && (
+        <Alert severity="info" sx={{ mb: 4 }}>
+          {mlHealth.message}
+        </Alert>
+      )}
+
+      {/* ML Simulation Results */}
+      {!mlError && mlData?.simulations && (
+        <Paper
+          elevation={0}
+          sx={{
+            p: 3,
+            border: `1px solid ${theme.palette.divider}`,
+            mb: 4,
+            backgroundColor: theme.palette.mode === 'dark' ? 'rgba(103, 58, 183, 0.1)' : 'rgba(103, 58, 183, 0.05)',
+          }}
+        >
+          <Typography variant="h6" fontWeight="bold" gutterBottom>
+            Monte Carlo Simulation Results
+          </Typography>
+          <Grid container spacing={3}>
+            <Grid item xs={12} sm={6} md={3}>
+              <Box>
+                <Typography variant="body2" color="text.secondary">
+                  Total Simulations
+                </Typography>
+                <Typography variant="h5" fontWeight="bold">
+                  {mlData?.simulations?.length || 0}
+                </Typography>
+              </Box>
+            </Grid>
+            <Grid item xs={12} sm={6} md={3}>
+              <Box>
+                <Typography variant="body2" color="text.secondary">
+                  Mean Probability
+                </Typography>
+                <Typography variant="h5" fontWeight="bold">
+                  {((mlData?.mean_probability || 0) * 100).toFixed(2)}%
+                </Typography>
+              </Box>
+            </Grid>
+            <Grid item xs={12} sm={6} md={3}>
+              <Box>
+                <Typography variant="body2" color="text.secondary">
+                  Variance
+                </Typography>
+                <Typography variant="h5" fontWeight="bold">
+                  {(mlData?.variance || 0).toFixed(6)}
+                </Typography>
+              </Box>
+            </Grid>
+            <Grid item xs={12} sm={6} md={3}>
+              <Box>
+                <Typography variant="body2" color="text.secondary">
+                  Risk Assessment
+                </Typography>
+                <Chip
+                  label={mlData?.risk_level?.toUpperCase() || 'CALCULATING'}
+                  color={
+                    mlData?.risk_level === 'high'
+                      ? 'error'
+                      : mlData?.risk_level === 'medium'
+                      ? 'warning'
+                      : 'success'
+                  }
+                  size="small"
+                  sx={{ mt: 1 }}
+                />
+              </Box>
+            </Grid>
+          </Grid>
+        </Paper>
+      )}
+
+      {/* Rest of KPI Cards */}
+      <Grid container spacing={3} sx={{ mb: 4 }}>
         <Grid item xs={12} sm={6} md={3}>
           {summaryLoading ? (
             <Skeleton variant="rectangular" height={150} />
@@ -469,6 +721,13 @@ export default function DashboardPage() {
                 </Paper>
               </Grid>
             ))}
+            {companyCount === 0 && (
+              <Grid item xs={12}>
+                <Alert severity="info">
+                  Add target companies in your profile to get personalized company recommendations.
+                </Alert>
+              </Grid>
+            )}
           </Grid>
         )}
       </Paper>
@@ -496,6 +755,20 @@ export default function DashboardPage() {
           Detailed Analytics
         </Button>
       </Box>
+
+      <Snackbar
+        open={Boolean(refreshMessage)}
+        autoHideDuration={4000}
+        onClose={() => setRefreshMessage('')}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+      >
+        <Alert
+          severity={refreshMessage.toLowerCase().includes('failed') ? 'error' : 'success'}
+          onClose={() => setRefreshMessage('')}
+        >
+          {refreshMessage}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 }

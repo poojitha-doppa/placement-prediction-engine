@@ -75,3 +75,26 @@ export const roadmapPreferencesSchema = z.object({
   experienceNotes: z.string().max(500).optional(),
   additionalNotes: z.string().optional()
 });
+
+export const manualRoadmapSchema = z.object({
+  title: z.string().min(2).max(120),
+  courseName: z.string().min(2).max(120),
+  currentLevel: z.enum(['beginner', 'intermediate', 'advanced', 'expert']),
+  timePerDay: z.number().min(0.5).max(24),
+  durationValue: z.number().int().min(1).max(365),
+  durationUnit: z.enum(['days', 'weeks', 'months']),
+  globalNotes: z.array(z.string()).max(10).default([]),
+  weeklyPlan: z.array(
+    weekSchema.extend({
+      completionPercent: z.number().min(0).max(100).optional(),
+      progress: z.number().min(0).max(100).optional(),
+      tasks: z.array(z.object({
+        id: z.string(),
+        title: z.string(),
+        description: z.string().optional(),
+        estimatedHours: z.number().optional(),
+        isCompleted: z.boolean().optional()
+      })).optional()
+    })
+  ).min(1).max(52)
+});

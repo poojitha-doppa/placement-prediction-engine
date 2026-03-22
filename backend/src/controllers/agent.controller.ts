@@ -4,7 +4,6 @@ import prisma from '../config/db.js';
 import { generateRoadmapWithAI, generateDashboardInsights } from '../services/llm.service.js';
 import { roadmapSchema, insightsResponseSchema } from '../utils/validation.js';
 
-// Check if database is available
 const isDatabaseAvailable = async () => {
   try {
     if (!prisma) return false;
@@ -16,104 +15,33 @@ const isDatabaseAvailable = async () => {
   }
 };
 
-// Generate mock roadmap when AI is not available
-const generateMockRoadmap = (userId: string) => {
-  const phases = ['Foundation', 'Core Skills', 'Advanced Topics', 'Interview Prep'];
-  const weeklyPlan = Array.from({ length: 16 }, (_, i) => ({
-    week: i + 1,
-    phase: phases[Math.floor(i / 4)],
-    focusAreas: ['Data Structures', 'Algorithms', 'Problem Solving'],
-    targets: [
-      `Complete ${10 + i * 2} coding problems`,
-      'Review key concepts',
-      'Practice mock interviews'
-    ],
-    expectedOutcomes: [
-      'Improved problem-solving speed',
-      'Better understanding of patterns'
-    ],
-    reasoning: 'Progressive skill building approach',
-    priorityScore: 0.8 - (i * 0.02),
-    estimatedHours: 12
-  }));
-
-  return {
-    id: `mock-roadmap-${userId}`,
-    durationWeeks: 16,
-    weeklyPlan,
-    globalNotes: [
-      'Practice consistently every day',
-      'Focus on understanding patterns, not memorization',
-      'Track your progress weekly'
-    ],
-    overallProgress: 0
-  };
-};
-
 export const generateRoadmap = async (req: AuthRequest, res: Response) => {
   const startTime = Date.now();
-  
+  let dbAvailable = false;
+
   try {
     const userId = req.user.id;
-    const dbAvailable = await isDatabaseAvailable();
+    dbAvailable = await isDatabaseAvailable();
 
     if (!dbAvailable) {
-      // Mock mode - use AI with mock profile data
-      const mockProfile = {
-        name: req.user.name || 'User',
-        email: req.user.email,
-        college: 'Your College',
-        branch: 'Computer Science',
-        year: 2026,
-        cgpa: 8.0,
-        skills: ['JavaScript', 'Python', 'React'],
-        targetCompanies: ['Google', 'Microsoft', 'Amazon'],
-        targetRoles: ['Software Engineer', 'Full Stack Developer'],
-        availableHoursPerWeek: 15
-      };
-
-      const mockAnalytics = {
-        consistencyScore: 70,
-        weakAreas: ['Dynamic Programming', 'System Design']
-      };
-
-      try {
-        // Try to generate with AI
-        const roadmapData = await generateRoadmapWithAI(mockProfile, mockAnalytics, null);
-        
-        return res.json({
-          roadmap: {
-            id: `mock-${Date.now()}`,
-            durationWeeks: roadmapData.durationWeeks,
-            weeklyPlan: roadmapData.weeklyPlan,
-            globalNotes: roadmapData.globalNotes,
-            overallProgress: 0
-          },
-          message: '✨ AI-powered roadmap generated successfully! (Mock mode - not saved)',
-          note: 'Connect a database to save your roadmap'
-        });
-      } catch (aiError: any) {
-        // If AI fails, return mock roadmap
-        console.log('⚠️  AI generation failed, using mock roadmap:', aiError.message);
-        return res.json({
-          roadmap: generateMockRoadmap(userId),
-          message: 'Mock roadmap generated (AI not configured)',
-          note: 'Add GEMINI_API_KEY to .env for AI-powered roadmaps'
-        });
-      }
+      return res.status(503).json({
+        error: 'Database unavailable',
+        message: 'Roadmaps require MongoDB because they depend on persisted profile and progress data.'
+      });
     }
 
-    // Database mode - original logic
     const profile = await prisma.profile.findUnique({
       where: { userId },
       include: { user: { select: { name: true, email: true } } }
     });
 
     if (!profile) {
-      return res.status(404).json({ error: 'Profile not found. Please complete your profile first.' });
+      return res.status(404).json({
+        error: 'Profile not found',
+        message: 'Please complete your profile before generating a roadmap.'
+      });
     }
 
-    // Get analytics
     const progressLogs = await prisma.progressLog.findMany({
       where: { userId },
       orderBy: { timestamp: 'desc' },
@@ -125,23 +53,19 @@ export const generateRoadmap = async (req: AuthRequest, res: Response) => {
       weakAreas: ['Dynamic Programming', 'System Design']
     };
 
-    // Get current roadmap if exists
     const currentRoadmap = await prisma.roadmap.findFirst({
       where: { userId, isActive: true },
       include: { weeks: true }
     });
 
-    // Generate with AI
     const roadmapData = await generateRoadmapWithAI(
       { ...profile, name: profile.user.name },
       analytics,
       currentRoadmap
     );
 
-    // Validate
     const validated = roadmapSchema.parse(roadmapData);
 
-    // Deactivate old roadmap
     if (currentRoadmap) {
       await prisma.roadmap.update({
         where: { id: currentRoadmap.id },
@@ -149,14 +73,13 @@ export const generateRoadmap = async (req: AuthRequest, res: Response) => {
       });
     }
 
-    // Create new roadmap
     const newRoadmap = await prisma.roadmap.create({
       data: {
         userId,
         durationWeeks: validated.durationWeeks,
         globalNotes: validated.globalNotes || [],
         weeks: {
-          create: validated.weeklyPlan.map(week => ({
+          create: validated.weeklyPlan.map((week) => ({
             weekNumber: week.week,
             phase: week.phase,
             focusAreas: week.focusAreas,
@@ -171,7 +94,6 @@ export const generateRoadmap = async (req: AuthRequest, res: Response) => {
       include: { weeks: true }
     });
 
-    // Log agent call
     await prisma.agentLog.create({
       data: {
         userId,
@@ -188,34 +110,39 @@ export const generateRoadmap = async (req: AuthRequest, res: Response) => {
       roadmap: {
         id: newRoadmap.id,
         durationWeeks: newRoadmap.durationWeeks,
-        weeklyPlan: newRoadmap.weeks.map(w => ({
-          week: w.weekNumber,
-          phase: w.phase,
-          focusAreas: w.focusAreas,
-          targets: w.targets,
-          expectedOutcomes: w.expectedOutcomes,
-          reasoning: w.reasoning,
-          priorityScore: w.priorityScore,
-          estimatedHours: w.estimatedHours
+        weeklyPlan: newRoadmap.weeks.map((week) => ({
+          week: week.weekNumber,
+          phase: week.phase,
+          focusAreas: week.focusAreas,
+          targets: week.targets,
+          expectedOutcomes: week.expectedOutcomes,
+          reasoning: week.reasoning,
+          priorityScore: week.priorityScore,
+          estimatedHours: week.estimatedHours
         })),
         globalNotes: newRoadmap.globalNotes
       },
       message: 'Roadmap generated successfully'
     });
   } catch (error: any) {
-    // Log error
-    await prisma.agentLog.create({
-      data: {
-        userId: req.user.id,
-        agentType: 'roadmap_generation',
-        inputPrompt: 'Generate roadmap',
-        inputData: {},
-        outputData: {},
-        status: 'error',
-        errorMessage: error.message,
-        latencyMs: Date.now() - startTime
+    if (dbAvailable) {
+      try {
+        await prisma.agentLog.create({
+          data: {
+            userId: req.user.id,
+            agentType: 'roadmap_generation',
+            inputPrompt: 'Generate roadmap',
+            inputData: {},
+            outputData: {},
+            status: 'error',
+            errorMessage: error.message,
+            latencyMs: Date.now() - startTime
+          }
+        });
+      } catch (logError: any) {
+        console.error('Failed to log roadmap generation error:', logError.message);
       }
-    });
+    }
 
     console.error('Generate roadmap error:', error);
     res.status(500).json({ error: 'Failed to generate roadmap', details: error.message });
@@ -225,11 +152,25 @@ export const generateRoadmap = async (req: AuthRequest, res: Response) => {
 export const getDashboardInsights = async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user.id;
+    const dbAvailable = await isDatabaseAvailable();
 
-    // Get data
+    if (!dbAvailable) {
+      return res.status(503).json({
+        error: 'Database unavailable',
+        message: 'Dashboard insights require MongoDB because they are generated from persisted profile and activity data.'
+      });
+    }
+
     const profile = await prisma.profile.findUnique({
       where: { userId }
     });
+
+    if (!profile) {
+      return res.status(404).json({
+        error: 'Profile not found',
+        message: 'Complete your profile before requesting dashboard insights.'
+      });
+    }
 
     const progressLogs = await prisma.progressLog.findMany({
       where: { userId },
@@ -237,20 +178,23 @@ export const getDashboardInsights = async (req: AuthRequest, res: Response) => {
       take: 20
     });
 
+    if (progressLogs.length === 0) {
+      return res.status(409).json({
+        error: 'Insufficient tracked activity',
+        message: 'Log roadmap progress first so dashboard insights can be based on real user activity.'
+      });
+    }
+
     const analytics = {
       weeklyProgress: progressLogs.length > 0 ? 65 : 0,
       consistencyScore: 72
     };
 
-    // Generate insights
     const insights = await generateDashboardInsights(profile, progressLogs, analytics);
-
-    // Validate
     const validated = insightsResponseSchema.parse(insights);
 
-    // Store insights
     await Promise.all(
-      validated.map(insight =>
+      validated.map((insight) =>
         prisma.optimizationInsight.create({
           data: {
             userId,
@@ -269,6 +213,6 @@ export const getDashboardInsights = async (req: AuthRequest, res: Response) => {
     });
   } catch (error: any) {
     console.error('Get dashboard insights error:', error);
-    res.status(500).json({ error: 'Failed to generate insights' });
+    res.status(500).json({ error: 'Failed to generate insights', details: error.message });
   }
 };

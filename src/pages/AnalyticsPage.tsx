@@ -1,8 +1,10 @@
 import { useQuery } from '@tanstack/react-query';
+import React from 'react';
 import {
   Box,
   Typography,
   Alert,
+  Button,
   CircularProgress,
   Paper,
   Grid,
@@ -27,11 +29,40 @@ import {
   Legend,
 } from 'recharts';
 import RadarSkillGapChart from '@/components/ui/RadarSkillGapChart';
+import MonteCarloChart from '@/components/MonteCarloChart';
 import { analyticsApi } from '@/api/api';
-import { TrendingUp, AccessTime, School } from '@mui/icons-material';
+import { TrendingUp, AccessTime, School, CheckCircle, WarningAmber, Error as ErrorIcon } from '@mui/icons-material';
 
 export default function AnalyticsPage() {
   const theme = useTheme();
+  const [mlData, setMlData] = React.useState<any>(null);
+  const [mlLoading, setMlLoading] = React.useState(false);
+  const [mlError, setMlError] = React.useState<string | null>(null);
+
+  const { data: mlHealth } = useQuery({
+    queryKey: ['mlHealth'],
+    queryFn: () => analyticsApi.getMLHealth(),
+    refetchInterval: 15000,
+  });
+
+  // Fetch ML Analytics
+  React.useEffect(() => {
+    const fetchMLAnalytics = async () => {
+      setMlLoading(true);
+      setMlError(null);
+      try {
+        const response = await analyticsApi.getAnalytics();
+        setMlData(response);
+      } catch (error: any) {
+        console.error('Failed to fetch ML analytics:', error);
+        setMlError(error.response?.data?.message || 'Failed to fetch ML analytics');
+      } finally {
+        setMlLoading(false);
+      }
+    };
+
+    fetchMLAnalytics();
+  }, []);
 
   // Fetch analytics data
   const {
@@ -41,6 +72,7 @@ export default function AnalyticsPage() {
   } = useQuery({
     queryKey: ['skillAnalytics'],
     queryFn: () => analyticsApi.getSkillAnalytics(),
+    refetchInterval: 60000,
   });
 
   const {
@@ -50,13 +82,24 @@ export default function AnalyticsPage() {
   } = useQuery({
     queryKey: ['optimizationInsights'],
     queryFn: () => analyticsApi.getOptimizationInsights(),
+    refetchInterval: 60000,
   });
 
   const skills = skillData;
   const insights = insightsData;
 
-  const isLoading = skillLoading || insightsLoading;
+  const isLoading = skillLoading || insightsLoading || mlLoading;
   const error = skillError || insightsError;
+  const getErrorMessage = (rawError: any, fallback: string) =>
+    rawError?.response?.data?.message ||
+    rawError?.response?.data?.error ||
+    rawError?.message ||
+    fallback;
+
+  const handleExportAnalyticsPdf = async () => {
+    const { exportAnalyticsToPdf } = await import('@/utils/pdfExport');
+    await exportAnalyticsToPdf();
+  };
 
   if (isLoading) {
     return (
@@ -76,22 +119,163 @@ export default function AnalyticsPage() {
   if (error) {
     return (
       <Alert severity="error" sx={{ mt: 2 }}>
-        Failed to load analytics data. Please try again.
+        {getErrorMessage(error, 'Failed to load analytics data.')}
       </Alert>
     );
   }
 
   return (
-    <Box>
+    <Box id="analytics-content">
       {/* Header */}
-      <Box sx={{ mb: 4 }}>
-        <Typography variant="h4" fontWeight="bold" gutterBottom>
-          Analytics & Optimization
-        </Typography>
-        <Typography variant="body2" color="text.secondary">
-          Data-driven insights to optimize your preparation strategy
-        </Typography>
+      <Box sx={{ mb: 4, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 2, flexWrap: 'wrap' }}>
+        <Box>
+          <Typography variant="h4" fontWeight="bold" gutterBottom>
+            Analytics & Optimization
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            Data-driven insights to optimize your preparation strategy
+          </Typography>
+        </Box>
+        <Button variant="outlined" onClick={handleExportAnalyticsPdf}>
+          Export PDF
+        </Button>
       </Box>
+
+      {/* ML Prediction Section */}
+      {!mlError && mlData && (
+        <Paper
+          elevation={0}
+          sx={{
+            p: 3,
+            mb: 4,
+            border: `2px solid ${theme.palette.primary.main}`,
+            backgroundColor: theme.palette.primary.light + '15',
+          }}
+        >
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 3 }}>
+            <Box>
+              <Typography variant="h6" fontWeight="bold" gutterBottom>
+                🤖 ML Placement Prediction
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                AI-powered prediction based on {mlData?.simulations?.length || 0} Monte Carlo simulations
+              </Typography>
+            </Box>
+            <Chip
+              label={mlData?.risk_level?.toUpperCase() || 'CALCULATING'}
+              icon={
+                mlData?.risk_level === 'high'
+                  ? <ErrorIcon />
+                  : mlData?.risk_level === 'medium'
+                  ? <WarningAmber />
+                  : <CheckCircle />
+              }
+              color={
+                mlData?.risk_level === 'high'
+                  ? 'error'
+                  : mlData?.risk_level === 'medium'
+                  ? 'warning'
+                  : 'success'
+              }
+              size="medium"
+            />
+          </Box>
+
+          <Grid container spacing={3}>
+            <Grid item xs={12} sm={6} md={3}>
+              <Box>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                  Placement Probability
+                </Typography>
+                <Typography variant="h4" fontWeight="bold" color="primary.main">
+                  {((mlData?.probability || 0) * 100).toFixed(2)}%
+                </Typography>
+              </Box>
+            </Grid>
+            <Grid item xs={12} sm={6} md={3}>
+              <Box>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                  Mean Probability
+                </Typography>
+                <Typography variant="h4" fontWeight="bold" color="success.main">
+                  {((mlData?.mean_probability || 0) * 100).toFixed(2)}%
+                </Typography>
+              </Box>
+            </Grid>
+            <Grid item xs={12} sm={6} md={3}>
+              <Box>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                  Variance
+                </Typography>
+                <Typography variant="h4" fontWeight="bold">
+                  {(mlData?.variance || 0).toFixed(6)}
+                </Typography>
+              </Box>
+            </Grid>
+            <Grid item xs={12} sm={6} md={3}>
+              <Box>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                  Simulations
+                </Typography>
+                <Typography variant="h4" fontWeight="bold">
+                  {mlData?.simulations?.length || 0}
+                </Typography>
+              </Box>
+            </Grid>
+          </Grid>
+
+          {/* Probability Gauge */}
+          <Box sx={{ mt: 3 }}>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+              Confidence Gauge
+            </Typography>
+            <LinearProgress
+              variant="determinate"
+              value={(mlData?.probability || 0) * 100}
+              sx={{ height: 12, borderRadius: 6 }}
+            />
+            <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+              {mlData?.probability > 0.7
+                ? '✅ High confidence for placement'
+                : mlData?.probability > 0.5
+                ? '⚠️ Moderate confidence - focus on weak areas'
+                : '❌ Low confidence - intensive preparation needed'}
+            </Typography>
+          </Box>
+        </Paper>
+      )}
+
+      {mlError && (
+        <Alert severity="warning" sx={{ mb: 4 }}>
+          {mlError}. {mlHealth?.message || 'Start the Python ML API with `npm run dev:ml`.'}
+        </Alert>
+      )}
+
+      {!mlError && mlHealth && (
+        <Alert severity={mlHealth.running ? 'success' : 'info'} sx={{ mb: 4 }}>
+          {mlHealth.running
+            ? `ML service is live at ${mlHealth.serviceUrl}.`
+            : mlHealth.message}
+        </Alert>
+      )}
+
+      {/* Monte Carlo Simulations Chart */}
+      {!mlError && mlData?.simulations && (
+        <Paper
+          elevation={0}
+          sx={{
+            p: 3,
+            mb: 4,
+            border: `1px solid ${theme.palette.divider}`,
+          }}
+        >
+          <MonteCarloChart
+            simulations={mlData.simulations}
+            height={400}
+            title={`Monte Carlo Simulation Results (${mlData.simulations.length} runs)`}
+          />
+        </Paper>
+      )}
 
       {/* Key Metrics */}
       <Grid container spacing={3} sx={{ mb: 4 }}>
@@ -184,7 +368,7 @@ export default function AnalyticsPage() {
             </Box>
             <Box>
               <Typography variant="h4" fontWeight="bold" color="warning.main">
-                {insights?.topicPriorities.length || 0}
+                {insights?.topicPriorities?.length || 0}
               </Typography>
               <Typography variant="body2" color="text.secondary">
                 Priority Topics Identified
@@ -193,6 +377,64 @@ export default function AnalyticsPage() {
           </Paper>
         </Grid>
       </Grid>
+
+      {/* Monte Carlo Risk Analysis */}
+      {insights?.riskMetrics && (
+        <Paper
+          elevation={0}
+          sx={{
+            p: 3,
+            mb: 4,
+            border: `2px solid ${theme.palette.warning.main}`,
+            backgroundColor: theme.palette.warning.light + '10',
+          }}
+        >
+          <Typography variant="h6" fontWeight="bold" gutterBottom>
+            📊 Monte Carlo Risk Analysis
+          </Typography>
+          <Grid container spacing={2}>
+            <Grid item xs={12} sm={6} md={3}>
+              <Box>
+                <Typography variant="caption" color="text.secondary">10th Percentile (Worst Case)</Typography>
+                <Typography variant="h5" fontWeight="bold" color="error.main">
+                  {(insights.riskMetrics.p10 * 100).toFixed(1)}%
+                </Typography>
+              </Box>
+            </Grid>
+            <Grid item xs={12} sm={6} md={3}>
+              <Box>
+                <Typography variant="caption" color="text.secondary">Median (Expected)</Typography>
+                <Typography variant="h5" fontWeight="bold" color="info.main">
+                  {(insights.riskMetrics.median * 100).toFixed(1)}%
+                </Typography>
+              </Box>
+            </Grid>
+            <Grid item xs={12} sm={6} md={3}>
+              <Box>
+                <Typography variant="caption" color="text.secondary">90th Percentile (Best Case)</Typography>
+                <Typography variant="h5" fontWeight="bold" color="success.main">
+                  {(insights.riskMetrics.p90 * 100).toFixed(1)}%
+                </Typography>
+              </Box>
+            </Grid>
+            <Grid item xs={12} sm={6} md={3}>
+              <Box>
+                <Typography variant="caption" color="text.secondary">Confidence Range</Typography>
+                <Typography variant="h6" fontWeight="bold">
+                  {insights.riskMetrics.confidenceRange}
+                </Typography>
+              </Box>
+            </Grid>
+            <Grid item xs={12}>
+              <Box sx={{ p: 2, backgroundColor: 'background.default', borderRadius: 1 }}>
+                <Typography variant="body2">
+                  <strong>{insights.improvementStrategy?.currentStatusMessage}</strong>
+                </Typography>
+              </Box>
+            </Grid>
+          </Grid>
+        </Paper>
+      )}
 
       {/* Weekly Focus Recommendation */}
       <Paper
@@ -208,15 +450,15 @@ export default function AnalyticsPage() {
           🎯 Suggested Focus for This Week
         </Typography>
         <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mb: 2 }}>
-          {insights?.weeklyFocus.topics.map((topic: any, idx: any) => (
+          {insights?.weeklyFocus?.topics?.map((topic: any, idx: any) => (
             <Chip key={idx} label={topic} color="primary" />
           ))}
         </Box>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-          {insights?.weeklyFocus.explanation}
+          {insights?.weeklyFocus?.explanation}
         </Typography>
         <Typography variant="caption" color="primary.main" fontWeight="bold">
-          Estimated Impact: +{((insights?.weeklyFocus.estimatedImpact || 0) * 100).toFixed(0)}% on placement probability
+          Estimated Impact: +{((insights?.weeklyFocus?.estimatedImpact || 0) * 100).toFixed(0)}% on placement probability
         </Typography>
       </Paper>
 
@@ -225,8 +467,8 @@ export default function AnalyticsPage() {
         <Grid item xs={12} md={6}>
           {skills && (
             <RadarSkillGapChart
-              current={skills.currentLevels}
-              target={skills.targetLevels}
+              current={skills?.currentLevels || []}
+              target={skills?.targetLevels || []}
               height={350}
             />
           )}
@@ -318,12 +560,12 @@ export default function AnalyticsPage() {
                 </TableCell>
                 <TableCell>
                   <Typography variant="subtitle2" fontWeight="bold">
-                    Skill Gap
+                    Impact
                   </Typography>
                 </TableCell>
                 <TableCell>
                   <Typography variant="subtitle2" fontWeight="bold">
-                    Estimated Hours
+                    Reasoning
                   </Typography>
                 </TableCell>
                 <TableCell>
@@ -334,7 +576,7 @@ export default function AnalyticsPage() {
               </TableRow>
             </TableHead>
             <TableBody>
-              {insights?.topicPriorities.map((topic: any, index: any) => (
+              {insights?.topicPriorities?.map((topic: any, index: any) => (
                 <TableRow
                   key={index}
                   sx={{
@@ -357,16 +599,16 @@ export default function AnalyticsPage() {
                     <Box sx={{ minWidth: 120 }}>
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
                         <Typography variant="body2" fontWeight={500}>
-                          {topic.priorityScore}/100
+                          {Math.round((topic.priority || topic.priorityScore || 0) * 100)}/100
                         </Typography>
                       </Box>
                       <LinearProgress
                         variant="determinate"
-                        value={topic.priorityScore}
+                        value={(topic.priority || topic.priorityScore || 0) * 100}
                         color={
-                          topic.priorityScore >= 85
+                          (topic.priority || topic.priorityScore || 0) >= 0.85
                             ? 'error'
-                            : topic.priorityScore >= 70
+                            : (topic.priority || topic.priorityScore || 0) >= 0.70
                             ? 'warning'
                             : 'primary'
                         }
@@ -375,19 +617,16 @@ export default function AnalyticsPage() {
                     </Box>
                   </TableCell>
                   <TableCell>
-                    <Typography variant="body2">
-                      {topic.currentLevel} → {topic.targetLevel}
+                    <Typography variant="body2" color="success.main" fontWeight={500}>
+                      +{Math.round(topic.estimatedImpact || 0)}% impact
                     </Typography>
                     <Typography variant="caption" color="text.secondary">
-                      Gap: {topic.targetLevel - topic.currentLevel} points
+                      Expected improvement
                     </Typography>
                   </TableCell>
                   <TableCell>
-                    <Chip label={`${topic.estimatedHours}h`} size="small" variant="outlined" />
-                  </TableCell>
-                  <TableCell>
-                    <Typography variant="body2" color="text.secondary" sx={{ maxWidth: 300 }}>
-                      {topic.reason}
+                    <Typography variant="body2">
+                      {topic.reason || topic.reasoning || 'High priority topic'}
                     </Typography>
                   </TableCell>
                 </TableRow>

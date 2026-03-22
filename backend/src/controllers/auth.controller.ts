@@ -11,6 +11,9 @@ import { mockUsersCache } from '../middleware/auth.js';
 const mockUsers: any[] = [];
 const passwordResetTokens: Map<string, { email: string; expires: Date; userId: string }> = new Map();
 
+const hashResetToken = (token: string) =>
+  crypto.createHash('sha256').update(token).digest('hex');
+
 // Initialize with a default test user for demo purposes
 const initializeDefaultUser = async () => {
   if (mockUsers.length === 0) {
@@ -293,64 +296,48 @@ export const requestPasswordReset = async (req: Request, res: Response) => {
       user = mockUsers.find(u => u.email === email);
     }
 
-    // For demo mode: Create temporary user if doesn't exist
     if (!user) {
-      // In production, just return success without token
-      // For demo, create a temporary account
-      const tempUserId = `temp-${Date.now()}-${Math.random().toString(36).substring(7)}`;
-      const tempUser = {
-        id: tempUserId,
-        email: email,
-        name: 'Temporary User',
-        password: '', // No password set yet
-        createdAt: new Date()
-      };
-      
-      if (!dbAvailable) {
-        // Add to mock users for this session
-        mockUsers.push(tempUser);
-      }
-      
-      user = tempUser;
+      return res.json({
+        message: 'If an account exists with this email, a password reset link has been sent.'
+      });
     }
 
     // Generate reset token
     const resetToken = crypto.randomBytes(32).toString('hex');
+    const tokenHash = hashResetToken(resetToken);
     const expires = new Date(Date.now() + 3600000); // 1 hour
 
     // Store token
-    passwordResetTokens.set(resetToken, {
+    passwordResetTokens.set(tokenHash, {
       email: user.email,
       userId: user.id,
       expires
     });
 
-    // In a real application, send email with reset link
-    // For demo purposes, return the token and mock email
-    console.log(`
-    ═══════════════════════════════════════════════════
-    📧 PASSWORD RESET EMAIL (Mock)
-    ═══════════════════════════════════════════════════
-    To: ${user.email}
-    Subject: Reset Your Password
-    
-    Hi ${user.name || 'User'},
-    
-    You requested to reset your password. Click the link below to set a new password:
-    
-    http://localhost:5173/reset-password?token=${resetToken}
-    
-    This link will expire in 1 hour.
-    
-    If you didn't request this, please ignore this email.
-    ═══════════════════════════════════════════════════
-    `);
+    const resetLink = `${config.frontendUrl.replace(/\/$/, '')}/reset-password?token=${resetToken}`;
 
-    res.json({ 
+    if (!config.isProduction) {
+      console.log(`
+      ===================================================
+      PASSWORD RESET EMAIL (Development)
+      ===================================================
+      To: ${user.email}
+      Subject: Reset Your Password
+
+      Hi ${user.name || 'User'},
+
+      You requested to reset your password. Open the link below to set a new password:
+
+      ${resetLink}
+
+      This link will expire in 1 hour.
+      ===================================================
+      `);
+    }
+
+    res.json({
       message: 'If an account exists with this email, a password reset link has been sent.',
-      // For demo, include token in response (remove in production)
-      resetToken,
-      resetLink: `http://localhost:5173/reset-password?token=${resetToken}`
+      ...(config.isProduction ? {} : { resetLink })
     });
   } catch (error) {
     console.error('Password reset request error:', error);
@@ -367,19 +354,20 @@ export const resetPassword = async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Token and new password are required' });
     }
 
-    if (newPassword.length < 6) {
-      return res.status(400).json({ error: 'Password must be at least 6 characters long' });
+    if (newPassword.length < 8) {
+      return res.status(400).json({ error: 'Password must be at least 8 characters long' });
     }
 
     // Verify token
-    const tokenData = passwordResetTokens.get(token);
+    const tokenHash = hashResetToken(token);
+    const tokenData = passwordResetTokens.get(tokenHash);
 
     if (!tokenData) {
       return res.status(400).json({ error: 'Invalid or expired reset token' });
     }
 
     if (new Date() > tokenData.expires) {
-      passwordResetTokens.delete(token);
+      passwordResetTokens.delete(tokenHash);
       return res.status(400).json({ error: 'Reset token has expired' });
     }
 
@@ -403,7 +391,7 @@ export const resetPassword = async (req: Request, res: Response) => {
     }
 
     // Delete used token
-    passwordResetTokens.delete(token);
+    passwordResetTokens.delete(tokenHash);
 
     res.json({ message: 'Password reset successfully. You can now login with your new password.' });
   } catch (error) {

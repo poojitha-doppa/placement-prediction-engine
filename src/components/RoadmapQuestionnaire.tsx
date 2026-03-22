@@ -24,7 +24,7 @@ export default function RoadmapQuestionnaire({ onSubmit, isSubmitting = false, i
     courseName: initialValues?.courseName || '',
     currentLevel: initialValues?.currentLevel || 'beginner',
     timePerDay: initialValues?.timePerDay || 2,
-    durationValue: initialValues?.durationValue || 8,
+    durationValue: initialValues?.durationValue || 16,
     durationUnit: initialValues?.durationUnit || 'weeks',
     experienceNotes: '',
     additionalNotes: '',
@@ -76,6 +76,7 @@ export default function RoadmapQuestionnaire({ onSubmit, isSubmitting = false, i
             fullWidth
             type="number"
             label="3. Completion time"
+            helperText="Recommended default: 16 weeks for a full placement-preparation cycle."
             value={formData.durationValue}
             onChange={(event) => setFormData((current) => ({
               ...current,

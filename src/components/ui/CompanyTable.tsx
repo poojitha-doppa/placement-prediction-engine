@@ -54,6 +54,11 @@ export default function CompanyTable({
             </TableCell>
             <TableCell>
               <Typography variant="subtitle2" fontWeight="bold">
+                Why It Matches
+              </Typography>
+            </TableCell>
+            <TableCell>
+              <Typography variant="subtitle2" fontWeight="bold">
                 Hiring Status
               </Typography>
             </TableCell>
@@ -95,6 +100,11 @@ export default function CompanyTable({
               <TableCell>
                 <Typography variant="body2" fontWeight={500}>
                   {getCompanyName(company)}
+                </Typography>
+              </TableCell>
+              <TableCell>
+                <Typography variant="body2" color="text.secondary">
+                  {company.explanation || (company.reasons && company.reasons[0]) || 'Based on your saved profile and skills'}
                 </Typography>
               </TableCell>
               <TableCell>

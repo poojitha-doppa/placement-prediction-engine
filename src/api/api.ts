@@ -1,5 +1,11 @@
 import axios from 'axios';
-import type { CourseRoadmapPreferences, Roadmap, RoadmapPreferencesResponse } from '@/types';
+import type {
+  CourseRoadmapPreferences,
+  IntegrationStatusResponse,
+  ManualRoadmapPayload,
+  Roadmap,
+  RoadmapPreferencesResponse
+} from '@/types';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
@@ -97,12 +103,27 @@ export const profileApi = {
     });
     return data;
   },
+
+  getIntegrationStatus: async (): Promise<IntegrationStatusResponse> => {
+    const { data } = await api.get('/api/integrations');
+    return data;
+  },
+
+  syncIntegration: async (provider: 'github' | 'leetcode', username?: string) => {
+    const { data } = await api.post('/api/integrations/sync', { provider, username });
+    return data;
+  },
 };
 
 // Roadmap APIs
 export const roadmapApi = {
   getRoadmap: async (): Promise<Roadmap> => {
     const { data } = await api.get('/api/roadmap');
+    return data;
+  },
+
+  getManualRoadmap: async (): Promise<Roadmap> => {
+    const { data } = await api.get('/api/roadmap/manual');
     return data;
   },
   
@@ -133,10 +154,30 @@ export const roadmapApi = {
     const { data } = await api.get('/api/roadmap/preferences');
     return data;
   },
+
+  regenerateRoadmap: async (): Promise<Roadmap> => {
+    const { data } = await api.post('/api/roadmap/regenerate');
+    return data.roadmap;
+  },
+
+  saveManualRoadmap: async (roadmap: ManualRoadmapPayload): Promise<Roadmap> => {
+    const { data } = await api.post('/api/roadmap/manual', roadmap);
+    return data.roadmap;
+  },
 };
 
 // Analytics APIs
 export const analyticsApi = {
+  getMLHealth: async () => {
+    const { data } = await api.get('/api/ml-health');
+    return data;
+  },
+
+  getAnalytics: async () => {
+    const { data } = await api.get('/api/analytics');
+    return data;
+  },
+  
   getPlacementSummary: async () => {
     const { data } = await api.get('/api/placement-summary');
     return data;
@@ -149,6 +190,11 @@ export const analyticsApi = {
   
   getCompanyMatches: async () => {
     const { data } = await api.get('/api/company-matches');
+    return data;
+  },
+
+  recomputeCompanyMatches: async () => {
+    const { data } = await api.post('/api/company-matches/recompute');
     return data;
   },
   

@@ -89,15 +89,8 @@ const LoginPage: React.FC = () => {
     setResetLoading(true);
     try {
       const response = await authApi.forgotPassword(resetEmail);
-      console.log('Password reset response:', response);
       setResetSuccess(true);
-      // Store the reset link for demo purposes (in production, this would only be sent via email)
-      if (response.resetLink) {
-        setResetLink(response.resetLink);
-      } else if (response.resetToken) {
-        // Build the link from token
-        setResetLink(`http://localhost:5173/reset-password?token=${response.resetToken}`);
-      }
+      setResetLink(response.resetLink || '');
     } catch (error: any) {
       console.error('Password reset error:', error);
       // Still show success to prevent email enumeration
@@ -271,12 +264,12 @@ const LoginPage: React.FC = () => {
           {resetSuccess ? (
             <>
               <Alert severity="success" sx={{ mt: 2, mb: 2 }}>
-                Password reset link has been sent to your email!
+                If an account exists, a password reset link has been sent to your email.
               </Alert>
               {resetLink && (
                 <Alert severity="info" sx={{ mb: 2 }}>
                   <Typography variant="body2" fontWeight="bold" gutterBottom>
-                    Demo Mode: Click the button below to set your new password
+                    Development Mode: Open the reset flow directly
                   </Typography>
                   <Button
                     variant="contained"
@@ -299,7 +292,7 @@ const LoginPage: React.FC = () => {
                     Set New Password
                   </Button>
                   <Typography variant="caption" display="block" sx={{ mt: 1, textAlign: 'center' }}>
-                    In production, this link would only be sent to your email.
+                    This shortcut is only shown outside production.
                   </Typography>
                 </Alert>
               )}
@@ -341,4 +334,3 @@ const LoginPage: React.FC = () => {
 };
 
 export default LoginPage;
-

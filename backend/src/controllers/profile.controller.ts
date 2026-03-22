@@ -6,6 +6,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { extractResumeText } from '../services/resumeExtractor.service.js';
 import { parseResumeWithLLM, mergeSkills, ParsedResumeData } from '../services/resumeParser.service.js';
+import { recomputeCompanyMatchesForUser } from '../services/companyMatch.service.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -140,29 +141,29 @@ export const getProfile = async (req: AuthRequest, res: Response) => {
       console.log('📤 Sending profile response:', profileResponse);
       res.json(profileResponse);
     } else {
-      // Mock mode - return complete profile with demo data
+      // Mock mode - return complete profile with user-specific data
       let profile = mockProfiles[req.user.id];
       
       if (!profile) {
-        // Create default profile for any user
+        // Create blank profile for new user
         profile = {
           id: `profile-${req.user.id}`,
-          name: req.user.name || 'Poojitha Doppa',
-          email: req.user.email || 'poojithadoppa8@gmail.com',
-          college: 'Vellore Institute of Technology',
-          branch: 'Computer Science and Engineering',
-          year: 2026,
-          cgpa: 8.75,
-          skills: ['JavaScript', 'TypeScript', 'React', 'Node.js', 'Python', 'Data Structures', 'Algorithms', 'System Design', 'SQL', 'MongoDB'],
-          targetCompanies: ['Google', 'Microsoft', 'Amazon', 'Meta', 'Apple', 'Netflix'],
-          targetRoles: ['Software Engineer', 'Full Stack Developer', 'Backend Developer'],
-          availableHoursPerWeek: 25,
+          name: req.user.name || '',
+          email: req.user.email || '',
+          college: '',
+          branch: '',
+          year: new Date().getFullYear() + 1,
+          cgpa: 0,
+          skills: [],
+          targetCompanies: [],
+          targetRoles: [],
+          availableHoursPerWeek: 10,
           resumeUrl: null,
-          githubUsername: 'poojitha-dev',
-          leetcodeUsername: 'poojitha_coder',
-          codeforcesUsername: 'poojitha_cf',
-          leetcodeSolved: 287,
-          githubProjects: 12,
+          githubUsername: '',
+          leetcodeUsername: '',
+          codeforcesUsername: '',
+          leetcodeSolved: 0,
+          githubProjects: 0,
           lastUpdated: new Date().toISOString()
         };
         mockProfiles[req.user.id] = profile;
@@ -261,6 +262,8 @@ export const updateProfile = async (req: AuthRequest, res: Response) => {
         year: profile.year,
         skillsCount: profile.skills?.length || 0
       });
+
+      await recomputeCompanyMatchesForUser(req.user.id, profile);
 
       res.json({
         message: 'Profile updated successfully',
@@ -463,6 +466,8 @@ export const uploadResume = async (req: AuthRequest, res: Response) => {
       }
 
       console.log('✅ Database updated successfully');
+
+      await recomputeCompanyMatchesForUser(req.user.id, updatedProfile);
       
       res.json({
         message: 'Resume uploaded and parsed successfully',

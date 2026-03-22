@@ -47,8 +47,8 @@ const ResetPasswordPage: React.FC = () => {
       return;
     }
 
-    if (newPassword.length < 6) {
-      setError('Password must be at least 6 characters long');
+    if (newPassword.length < 8) {
+      setError('Password must be at least 8 characters long');
       return;
     }
 
@@ -162,7 +162,7 @@ const ResetPasswordPage: React.FC = () => {
                   margin="normal"
                   required
                   autoFocus
-                  helperText="Must be at least 6 characters"
+                  helperText="Must be at least 8 characters"
                   InputProps={{
                     endAdornment: (
                       <InputAdornment position="end">
