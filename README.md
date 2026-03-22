@@ -123,11 +123,11 @@ Create `backend/.env`:
 
 ```env
 JWT_SECRET=your-secret-key-min-32-chars
-DATABASE_URL=mongodb+srv://user:password@cluster.mongodb.net/placement_prediction?retryWrites=true&w=majority
+DATABASE_URL=<your-mongodb-atlas-connection-string>
 PORT=3000
 CORS_ORIGIN=http://localhost:5173
 FRONTEND_URL=http://localhost:5173
-GEMINI_API_KEY=your-gemini-api-key
+GEMINI_API_KEY=<your-gemini-api-key>
 ```
 
 ### ML environment
