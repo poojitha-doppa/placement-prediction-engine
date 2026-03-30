@@ -1,20 +1,22 @@
-import { Suspense, lazy } from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { ThemeProvider } from '@mui/material/styles';
-import { Box, CircularProgress, CssBaseline } from '@mui/material';
+import { CssBaseline } from '@mui/material';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import theme from './theme';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
+import AdminProtectedRoute from './components/AdminProtectedRoute';
 import MainLayout from './components/layout/MainLayout';
-
-const LoginPage = lazy(() => import('./pages/LoginPage'));
-const ResetPasswordPage = lazy(() => import('./pages/ResetPasswordPage'));
-const DashboardPage = lazy(() => import('./pages/DashboardPage'));
-const ProfilePage = lazy(() => import('./pages/ProfilePage'));
-const RoadmapPage = lazy(() => import('./pages/RoadmapPage'));
-const CompaniesPage = lazy(() => import('./pages/CompaniesPage'));
-const AnalyticsPage = lazy(() => import('./pages/AnalyticsPage'));
+import LandingPage from './pages/LandingPage';
+import LoginPage from './pages/LoginPage';
+import ResetPasswordPage from './pages/ResetPasswordPage';
+import DashboardPage from './pages/DashboardPage';
+import ProfilePage from './pages/ProfilePage';
+import RoadmapPage from './pages/RoadmapPage';
+import CompaniesPage from './pages/CompaniesPage';
+import AnalyticsPage from './pages/AnalyticsPage';
+import SettingsPage from './pages/SettingsPage';
+import AdminDashboardPage from './pages/AdminDashboardPage';
 
 // Create a client
 const queryClient = new QueryClient({
@@ -27,38 +29,48 @@ const queryClient = new QueryClient({
   },
 });
 
-// Inner component that has access to auth context
 function AppContent() {
   const { user } = useAuth();
   
   return (
-    <Suspense fallback={<RouteFallback />}>
-      <MainLayout studentName={user?.name || 'User'}>
-        <Routes>
-          <Route path="/profile" element={<ProfilePage />} />
-          <Route path="/dashboard" element={<DashboardPage />} />
-          <Route path="/roadmap" element={<RoadmapPage />} />
-          <Route path="/companies" element={<CompaniesPage />} />
-          <Route path="/analytics" element={<AnalyticsPage />} />
-        </Routes>
-      </MainLayout>
-    </Suspense>
+    <MainLayout studentName={user?.name || 'User'}>
+      <Routes>
+        <Route path="/profile" element={<ProfilePage />} />
+        <Route path="/dashboard" element={<DashboardPage />} />
+        <Route path="/roadmap" element={<RoadmapPage />} />
+        <Route path="/companies" element={<CompaniesPage />} />
+        <Route path="/analytics" element={<AnalyticsPage />} />
+        <Route path="/settings" element={<SettingsPage />} />
+      </Routes>
+    </MainLayout>
   );
 }
 
-function RouteFallback() {
+function AuthRoutes() {
   return (
-    <Box
-      sx={{
-        minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: 2,
-      }}
-    >
-      <CircularProgress size={28} />
-    </Box>
+    <Routes>
+      <Route path="/" element={<LandingPage />} />
+      <Route path="/login" element={<LoginPage />} />
+      <Route path="/reset-password" element={<ResetPasswordPage />} />
+      {/* Admin Dashboard - Protected by admin role */}
+      <Route
+        path="/admin-dashboard"
+        element={
+          <AdminProtectedRoute>
+            <AdminDashboardPage />
+          </AdminProtectedRoute>
+        }
+      />
+      {/* User Routes */}
+      <Route
+        path="/*"
+        element={
+          <ProtectedRoute>
+            <AppContent />
+          </ProtectedRoute>
+        }
+      />
+    </Routes>
   );
 }
 
@@ -69,21 +81,7 @@ function App() {
         <CssBaseline />
         <AuthProvider>
           <BrowserRouter>
-            <Suspense fallback={<RouteFallback />}>
-              <Routes>
-                <Route path="/login" element={<LoginPage />} />
-                <Route path="/reset-password" element={<ResetPasswordPage />} />
-                <Route path="/" element={<Navigate to="/login" replace />} />
-                <Route
-                  path="/*"
-                  element={
-                    <ProtectedRoute>
-                      <AppContent />
-                    </ProtectedRoute>
-                  }
-                />
-              </Routes>
-            </Suspense>
+            <AuthRoutes />
           </BrowserRouter>
         </AuthProvider>
       </ThemeProvider>

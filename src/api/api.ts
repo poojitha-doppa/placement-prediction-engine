@@ -204,6 +204,44 @@ export const analyticsApi = {
   },
 };
 
+// Notification APIs
+export const notificationApi = {
+  getAllNotifications: async (limit: number = 50) => {
+    const { data } = await api.get('/api/notifications', { params: { limit } });
+    return data;
+  },
+
+  getUnreadNotifications: async () => {
+    const { data } = await api.get('/api/notifications/unread');
+    return data;
+  },
+
+  getUnreadCount: async () => {
+    const { data } = await api.get('/api/notifications/unread/count');
+    return data;
+  },
+
+  markAsRead: async (notificationId: string) => {
+    const { data } = await api.patch(`/api/notifications/${notificationId}/read`);
+    return data;
+  },
+
+  markAllAsRead: async () => {
+    const { data } = await api.patch('/api/notifications/read/all');
+    return data;
+  },
+
+  deleteNotification: async (notificationId: string) => {
+    const { data } = await api.delete(`/api/notifications/${notificationId}`);
+    return data;
+  },
+
+  deleteAllNotifications: async () => {
+    const { data } = await api.delete('/api/notifications/delete/all');
+    return data;
+  },
+};
+
 // Agent APIs
 export const agentApi = {
   generateRoadmap: async (forceRegenerate = false) => {

@@ -7,6 +7,7 @@ import { fileURLToPath } from 'url';
 import { extractResumeText } from '../services/resumeExtractor.service.js';
 import { parseResumeWithLLM, mergeSkills, ParsedResumeData } from '../services/resumeParser.service.js';
 import { recomputeCompanyMatchesForUser } from '../services/companyMatch.service.js';
+import { createNotification } from '../services/notification.service.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -265,6 +266,15 @@ export const updateProfile = async (req: AuthRequest, res: Response) => {
 
       await recomputeCompanyMatchesForUser(req.user.id, profile);
 
+      await createNotification({
+        userId: req.user.id,
+        type: 'profile_updated',
+        title: 'Profile Updated',
+        message: 'Your profile details were saved successfully.',
+        resourceType: 'profile',
+        actionUrl: '/profile'
+      });
+
       res.json({
         message: 'Profile updated successfully',
         profile: {
@@ -383,6 +393,16 @@ export const uploadResume = async (req: AuthRequest, res: Response) => {
           resumeUrl
         };
       }
+
+      await createNotification({
+        userId: req.user.id,
+        type: 'resume_uploaded_partial',
+        title: 'Resume Uploaded with Warning',
+        message: 'Resume uploaded, but text extraction failed. You can still continue updating profile details.',
+        resourceType: 'profile',
+        actionUrl: '/profile'
+      });
+
       return res.json({
         message: 'Resume uploaded successfully (parsing failed)',
         resumeUrl,
@@ -412,6 +432,16 @@ export const uploadResume = async (req: AuthRequest, res: Response) => {
           resumeUrl
         };
       }
+
+      await createNotification({
+        userId: req.user.id,
+        type: 'resume_uploaded_partial',
+        title: 'Resume Uploaded with Warning',
+        message: 'Resume uploaded, but parsing failed. The file is saved and you can retry later.',
+        resourceType: 'profile',
+        actionUrl: '/profile'
+      });
+
       return res.json({
         message: 'Resume uploaded successfully (parsing failed)',
         resumeUrl,
@@ -468,6 +498,15 @@ export const uploadResume = async (req: AuthRequest, res: Response) => {
       console.log('✅ Database updated successfully');
 
       await recomputeCompanyMatchesForUser(req.user.id, updatedProfile);
+
+      await createNotification({
+        userId: req.user.id,
+        type: 'resume_uploaded',
+        title: 'Resume Uploaded',
+        message: 'Your resume was uploaded and parsed successfully.',
+        resourceType: 'profile',
+        actionUrl: '/profile'
+      });
       
       res.json({
         message: 'Resume uploaded and parsed successfully',
@@ -501,6 +540,15 @@ export const uploadResume = async (req: AuthRequest, res: Response) => {
       };
       
       console.log('✅ Mock profile updated successfully');
+
+      await createNotification({
+        userId: req.user.id,
+        type: 'resume_uploaded',
+        title: 'Resume Uploaded',
+        message: 'Your resume was uploaded successfully.',
+        resourceType: 'profile',
+        actionUrl: '/profile'
+      });
       
       res.json({
         message: 'Resume uploaded and parsed successfully (mock mode)',

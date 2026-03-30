@@ -2,9 +2,15 @@ import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { config } from '../config/index.js';
 import prisma from '../config/db.js';
+import { getRoleForEmail, type UserRole } from '../utils/roles.js';
 
 export interface AuthRequest extends Request {
-  user?: any;
+  user?: {
+    id: string;
+    email: string;
+    name: string | null;
+    role: UserRole;
+  };
 }
 
 // Shared mock users cache that can be updated from auth controller
@@ -23,6 +29,38 @@ const isDatabaseAvailable = async () => {
   }
 };
 
+export const resolveAuthenticatedUser = async (token: string) => {
+  const decoded = jwt.verify(token, config.jwtSecret) as { sub: string; email?: string; role?: UserRole };
+  const dbAvailable = await isDatabaseAvailable();
+
+  if (dbAvailable) {
+    const user = await prisma.user.findUnique({
+      where: { id: decoded.sub },
+      select: { id: true, email: true, name: true }
+    });
+    if (!user) {
+      return null;
+    }
+
+    return {
+      ...user,
+      role: decoded.role || getRoleForEmail(user.email)
+    };
+  }
+
+  const mockUser = mockUsersCache.users.find((u) => u.id === decoded.sub);
+  if (!mockUser) {
+    return null;
+  }
+
+  return {
+    id: mockUser.id,
+    email: mockUser.email,
+    name: mockUser.name,
+    role: decoded.role || getRoleForEmail(mockUser.email)
+  };
+};
+
 export const authenticateJWT = async (
   req: AuthRequest,
   res: Response,
@@ -36,46 +74,54 @@ export const authenticateJWT = async (
       return res.status(401).json({ error: 'No token provided' });
     }
 
-    const decoded = jwt.verify(token, config.jwtSecret) as { sub: string };
-    
-    const dbAvailable = await isDatabaseAvailable();
-    
-    if (dbAvailable) {
-      // Database mode - fetch user from DB
-      console.log(`🔍 Looking up user in database: ${decoded.sub}`);
-      const user = await prisma.user.findUnique({
-        where: { id: decoded.sub },
-        select: { id: true, email: true, name: true }
-      });
+    const user = await resolveAuthenticatedUser(token);
 
-      if (!user) {
-        console.error(`❌ User not found in database: ${decoded.sub}`);
-        return res.status(401).json({ error: 'User not found' });
-      }
-
-      req.user = user;
-      console.log(`✅ Auth successful (DB): ${user.name} (${user.email})`);
-    } else {
-      // Mock mode - fetch from mock users cache
-      const mockUser = mockUsersCache.users.find(u => u.id === decoded.sub);
-      
-      if (!mockUser) {
-        console.error(`❌ Mock user not found for ID: ${decoded.sub}`);
-        return res.status(401).json({ error: 'User not found' });
-      }
-
-      req.user = { 
-        id: mockUser.id,
-        email: mockUser.email,
-        name: mockUser.name
-      };
-      
-      console.log(`✅ Auth successful for: ${mockUser.name} (${mockUser.email})`);
+    if (!user) {
+      return res.status(401).json({ error: 'User not found' });
     }
+
+    req.user = user;
 
     next();
   } catch (error) {
     console.error('Auth middleware error:', error);
     return res.status(401).json({ error: 'Invalid token' });
   }
+};
+
+export const authenticateJWTFromQuery = async (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const token = typeof req.query.token === 'string' ? req.query.token : undefined;
+
+    if (!token) {
+      return res.status(401).json({ error: 'No token provided' });
+    }
+
+    const user = await resolveAuthenticatedUser(token);
+    if (!user) {
+      return res.status(401).json({ error: 'User not found' });
+    }
+
+    req.user = user;
+    next();
+  } catch (error) {
+    console.error('Query auth middleware error:', error);
+    return res.status(401).json({ error: 'Invalid token' });
+  }
+};
+
+export const requireAdmin = (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+) => {
+  if (!req.user || req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Unauthorized' });
+  }
+
+  next();
 };

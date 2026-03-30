@@ -3,6 +3,7 @@ import { AuthRequest } from '../middleware/auth.js';
 import prisma from '../config/db.js';
 import { getPrediction, getSimulation, checkMLAPIHealth } from '../services/ml.service.js';
 import { recomputeCompanyMatchesForUser } from '../services/companyMatch.service.js';
+import { createNotification } from '../services/notification.service.js';
 
 // Check if database is available
 const isDatabaseAvailable = async () => {
@@ -897,6 +898,15 @@ export const recomputeCompanyMatches = async (req: AuthRequest, res: Response) =
     }
 
     const matches = await recomputeCompanyMatchesForUser(userId, profile);
+
+    await createNotification({
+      userId,
+      type: 'company_matches_updated',
+      title: 'Company Matches Updated',
+      message: `Your company matches were refreshed successfully (${matches.length} matches).`,
+      resourceType: 'company',
+      actionUrl: '/companies'
+    });
 
     res.json({
       message: 'Company matches recomputed successfully.',

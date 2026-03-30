@@ -20,7 +20,6 @@ import {
   CloudUpload,
   GitHub,
   Code,
-  Sync,
 } from '@mui/icons-material';
 import { useAuth } from '../contexts/AuthContext';
 import { profileApi } from '@/api/api';
@@ -72,11 +71,7 @@ export default function ProfilePage() {
     queryFn: () => profileApi.getProfile(),
   });
 
-  const { data: integrationStatusData } = useQuery({
-    queryKey: ['integrationStatus'],
-    queryFn: () => profileApi.getIntegrationStatus(),
-    retry: false,
-  });
+
 
   // Set form data when profile loads
   useEffect(() => {
@@ -102,8 +97,8 @@ export default function ProfilePage() {
           minPackageLPA: profileData.minPackageLPA || 0,
         },
         integrationStatus: {
-          github: profileData.githubUsername ? 'connected' : 'not-connected',
-          leetcode: profileData.leetcodeUsername ? 'connected' : 'not-connected',
+          github: 'not-connected',
+          leetcode: 'not-connected',
           resume: profileData.resumeUrl ? 'uploaded' : 'not-uploaded',
         },
       });
@@ -118,28 +113,7 @@ export default function ProfilePage() {
     }
   }, [profileData, user, isLoading]);
 
-  useEffect(() => {
-    if (!integrationStatusData) {
-      return;
-    }
 
-    setFormData((prev) => ({
-      ...prev,
-      integrationStatus: {
-        github: integrationStatusData.providers.github.connected
-          ? 'connected'
-          : integrationStatusData.providers.github.syncStatus === 'syncing'
-          ? 'pending'
-          : 'not-connected',
-        leetcode: integrationStatusData.providers.leetcode.connected
-          ? 'connected'
-          : integrationStatusData.providers.leetcode.syncStatus === 'syncing'
-          ? 'pending'
-          : 'not-connected',
-        resume: prev.integrationStatus?.resume || 'not-uploaded',
-      },
-    }));
-  }, [integrationStatusData]);
 
   const profile = profileData;
 
@@ -312,44 +286,7 @@ export default function ProfilePage() {
     });
   };
 
-  const integrationSyncMutation = useMutation({
-    mutationFn: ({ provider, username }: { provider: 'github' | 'leetcode'; username: string }) =>
-      profileApi.syncIntegration(provider, username),
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ['studentProfile'] });
-      queryClient.invalidateQueries({ queryKey: ['integrationStatus'] });
-      queryClient.invalidateQueries({ queryKey: ['placementSummary'] });
-      queryClient.invalidateQueries({ queryKey: ['skillAnalytics'] });
-      queryClient.invalidateQueries({ queryKey: ['analytics'] });
-      queryClient.invalidateQueries({ queryKey: ['companyMatches'] });
-      setSuccessMessage(data?.warning || 'Integration sync completed successfully!');
-      setShowSuccess(true);
-    },
-    onError: (syncError: any) => {
-      setErrorMessage(getErrorMessage(syncError, 'Integration sync failed.'));
-    },
-  });
 
-  const handleIntegrationSync = (provider: 'github' | 'leetcode') => {
-    const username = provider === 'github'
-      ? extractUsername(formData.githubUrl)
-      : extractUsername(formData.leetcodeUrl);
-
-    if (!username) {
-      setErrorMessage(`Add your ${provider === 'github' ? 'GitHub' : 'LeetCode'} username or URL first.`);
-      return;
-    }
-
-    integrationSyncMutation.mutate({ provider, username });
-  };
-
-  const getStatusColor = (
-    status: 'connected' | 'not-connected' | 'pending' | 'uploaded' | 'not-uploaded' | 'parsing'
-  ) => {
-    if (status === 'connected' || status === 'uploaded') return 'success';
-    if (status === 'pending' || status === 'parsing') return 'warning';
-    return 'default';
-  };
 
   if (isLoading) {
     return (
@@ -388,12 +325,6 @@ export default function ProfilePage() {
         <Typography variant="body2" color="text.secondary">
           Keep your profile updated for accurate placement predictions
         </Typography>
-        {(integrationStatusData?.providers.github.syncStatus === 'error' ||
-          integrationStatusData?.providers.leetcode.syncStatus === 'error') && (
-          <Alert severity="warning" sx={{ mt: 2 }}>
-            One or more external syncs failed recently. Check the provider-specific message below and retry after fixing the username or service issue.
-          </Alert>
-        )}
       </Box>
 
       <Grid container spacing={3}>
@@ -560,37 +491,7 @@ export default function ProfilePage() {
                     }
                     placeholder="https://github.com/username"
                   />
-                  <Button
-                    variant="outlined"
-                    onClick={() => handleIntegrationSync('github')}
-                    disabled={integrationSyncMutation.isPending}
-                    startIcon={integrationSyncMutation.isPending ? <CircularProgress size={16} /> : <Sync />}
-                  >
-                    Sync
-                  </Button>
                 </Box>
-                <Box sx={{ mt: 1, display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
-                  <Chip
-                    size="small"
-                    label={`GitHub: ${formData.integrationStatus?.github || 'not-connected'}`}
-                    color={getStatusColor(formData.integrationStatus?.github || 'not-connected')}
-                  />
-                  {integrationStatusData?.providers.github.lastSyncAt && (
-                    <Typography variant="caption" color="text.secondary">
-                      Last sync: {new Date(integrationStatusData.providers.github.lastSyncAt).toLocaleString()}
-                    </Typography>
-                  )}
-                  {integrationStatusData?.providers.github.stats?.publicRepos !== undefined && (
-                    <Typography variant="caption" color="text.secondary">
-                      Repos: {integrationStatusData.providers.github.stats.publicRepos}, Stars: {integrationStatusData.providers.github.stats.totalStars || 0}
-                    </Typography>
-                  )}
-                </Box>
-                {integrationStatusData?.providers.github.syncError && (
-                  <Alert severity="warning" sx={{ mt: 1 }}>
-                    {integrationStatusData.providers.github.syncError}
-                  </Alert>
-                )}
               </Grid>
               <Grid item xs={12}>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
@@ -604,37 +505,7 @@ export default function ProfilePage() {
                     }
                     placeholder="https://leetcode.com/username"
                   />
-                  <Button
-                    variant="outlined"
-                    onClick={() => handleIntegrationSync('leetcode')}
-                    disabled={integrationSyncMutation.isPending}
-                    startIcon={integrationSyncMutation.isPending ? <CircularProgress size={16} /> : <Sync />}
-                  >
-                    Sync
-                  </Button>
                 </Box>
-                <Box sx={{ mt: 1, display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
-                  <Chip
-                    size="small"
-                    label={`LeetCode: ${formData.integrationStatus?.leetcode || 'not-connected'}`}
-                    color={getStatusColor(formData.integrationStatus?.leetcode || 'not-connected')}
-                  />
-                  {integrationStatusData?.providers.leetcode.lastSyncAt && (
-                    <Typography variant="caption" color="text.secondary">
-                      Last sync: {new Date(integrationStatusData.providers.leetcode.lastSyncAt).toLocaleString()}
-                    </Typography>
-                  )}
-                  {integrationStatusData?.providers.leetcode.stats?.totalSolved !== undefined && (
-                    <Typography variant="caption" color="text.secondary">
-                      Solved: {integrationStatusData.providers.leetcode.stats.totalSolved}, Rank: {integrationStatusData.providers.leetcode.stats.ranking || 'n/a'}
-                    </Typography>
-                  )}
-                </Box>
-                {integrationStatusData?.providers.leetcode.syncError && (
-                  <Alert severity="warning" sx={{ mt: 1 }}>
-                    {integrationStatusData.providers.leetcode.syncError}
-                  </Alert>
-                )}
               </Grid>
             </Grid>
           </Paper>

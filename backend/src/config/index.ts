@@ -19,6 +19,7 @@ export const config = {
   port: parseInt(process.env.PORT || '3000'),
   jwtSecret,
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '7d',
+  adminEmail: process.env.ADMIN_EMAIL || 'admin@placement.local',
   corsOrigin: process.env.CORS_ORIGIN || 'http://localhost:5173',
   frontendUrl: process.env.FRONTEND_URL || process.env.CORS_ORIGIN || 'http://localhost:5173',
   nodeEnv,

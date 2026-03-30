@@ -4,6 +4,7 @@ import prisma from '../config/db.js';
 import { manualRoadmapSchema, progressLogSchema, roadmapPreferencesSchema } from '../utils/validation.js';
 import { CourseRoadmapRequest, generateCourseRoadmapWithAI } from '../services/llm.service.js';
 import { getYouTubeRecommendations } from '../services/youtube.service.js';
+import { createNotification } from '../services/notification.service.js';
 
 const isDatabaseAvailable = async () => {
   try {
@@ -567,6 +568,16 @@ export const saveManualRoadmap = async (req: AuthRequest, res: Response) => {
       'manual'
     );
 
+    // Create notification for manual roadmap saved
+    await createNotification({
+      userId: req.user.id,
+      type: 'roadmap_saved',
+      title: 'Manual Roadmap Saved',
+      message: `Your manual roadmap "${manualRoadmap.title}" has been saved successfully!`,
+      resourceType: 'roadmap',
+      actionUrl: '/roadmap',
+    });
+
     res.json({
       message: 'Manual roadmap saved successfully.',
       roadmap: response
@@ -618,6 +629,17 @@ export const logProgress = async (req: AuthRequest, res: Response) => {
       validatedData.weekNumber,
       validatedData.completionPercent
     );
+
+    if (validatedData.completionPercent >= 100) {
+      await createNotification({
+        userId: req.user.id,
+        type: 'progress_milestone',
+        title: 'Task Milestone Completed',
+        message: `Great job! You logged 100% completion for week ${validatedData.weekNumber}.`,
+        resourceType: 'roadmap',
+        actionUrl: '/roadmap'
+      });
+    }
 
     res.json({
       message: adaptiveGuidance.message,
@@ -723,6 +745,15 @@ export const saveRoadmapPreferences = async (req: AuthRequest, res: Response) =>
       }
     });
 
+    await createNotification({
+      userId: req.user.id,
+      type: 'roadmap_preferences_saved',
+      title: 'Roadmap Preferences Saved',
+      message: `Preferences for ${finalValidatedData.courseName} were saved. You can now regenerate your roadmap.`,
+      resourceType: 'roadmap',
+      actionUrl: '/roadmap'
+    });
+
     const userProfile = await getSummaryProfile(req.user.id);
     const summary = generateUserSummary(finalValidatedData, userProfile);
 
@@ -795,6 +826,17 @@ export const regenerateRoadmap = async (req: AuthRequest, res: Response) => {
 
     const userProfile = await getSummaryProfile(req.user.id);
     const roadmap = await createOrFetchSystemRoadmap(req.user.id, preferences, userProfile);
+
+    // Create notification for roadmap generation
+    await createNotification({
+      userId: req.user.id,
+      type: 'roadmap_generated',
+      title: 'New Roadmap Generated',
+      message: `Your new ${preferences.courseName || 'placement'} roadmap has been generated successfully!`,
+      resourceId: roadmap.id,
+      resourceType: 'roadmap',
+      actionUrl: '/roadmap',
+    });
 
     res.json({
       message: 'System roadmap regenerated successfully from your latest profile, analytics, company gaps, and progress.',

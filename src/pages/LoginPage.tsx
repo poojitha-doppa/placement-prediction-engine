@@ -73,7 +73,11 @@ const LoginPage: React.FC = () => {
         // Register
         await register(name, email, password);
       }
-      navigate('/profile'); // Redirect to profile page to complete setup
+      // Redirect based on role - will be handled by App.tsx after login
+      const userRole = localStorage.getItem('placement_user') 
+        ? JSON.parse(localStorage.getItem('placement_user') || '{}').role 
+        : 'user';
+      navigate(userRole === 'admin' ? '/admin-dashboard' : '/profile');
     } catch (err: any) {
       setError(err.message || 'Authentication failed. Please try again.');
     } finally {

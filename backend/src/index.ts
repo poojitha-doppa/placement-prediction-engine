@@ -8,6 +8,8 @@ import apiRoutes from './routes/api.routes.js';
 import analyticsRoutes from './routes/analytics.routes.js';
 import agentRoutes from './routes/agent.routes.js';
 import integrationRoutes from './routes/integration.routes.js';
+import notificationRoutes from './routes/notification.routes.js';
+import adminRoutes from './routes/admin.routes.js';
 import prisma from './config/db.js';
 
 dotenv.config();
@@ -31,7 +33,9 @@ app.use('/auth', authRoutes);
 app.use('/api', apiRoutes);
 app.use('/api', analyticsRoutes);
 app.use('/api', integrationRoutes);
+app.use('/api/notifications', notificationRoutes);
 app.use('/agent', agentRoutes);
+app.use('/admin', adminRoutes);
 
 app.use(errorHandler);
 

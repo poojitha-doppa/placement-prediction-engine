@@ -6,6 +6,7 @@ interface User {
   email: string;
   name: string;
   token: string;
+  role: 'admin' | 'user';
 }
 
 interface AuthContextType {
@@ -15,6 +16,7 @@ interface AuthContextType {
   logout: () => void;
   isAuthenticated: boolean;
   isLoading: boolean;
+  isAdmin: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -42,7 +44,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             id: response.user.id,
             email: response.user.email,
             name: response.user.name || '',
-            token
+            token,
+            role: response.user.role || 'user'
           });
         })
         .catch(() => {
@@ -68,7 +71,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         id: response.user.id,
         email: response.user.email,
         name: response.user.name || '',
-        token: response.token
+        token: response.token,
+        role: response.user.role || 'user'
       };
       
       // Store token first, then user data
@@ -76,7 +80,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       localStorage.setItem('placement_user', JSON.stringify(userData));
       setUser(userData);
       
-      console.log('✅ Login successful:', userData.email);
+      console.log('✅ Login successful:', userData.email, `(role: ${userData.role})`);
     } catch (error: any) {
       console.error('❌ Login error:', error);
       const errorMessage = error.response?.data?.error || 'Login failed. Please check your credentials.';
@@ -96,7 +100,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         id: response.user.id,
         email: response.user.email,
         name: response.user.name || name,
-        token: response.token
+        token: response.token,
+        role: response.user.role || 'user'
       };
       
       // Store token first, then user data
@@ -125,6 +130,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         logout,
         isAuthenticated: !!user,
         isLoading,
+        isAdmin: user?.role === 'admin',
       }}
     >
       {children}

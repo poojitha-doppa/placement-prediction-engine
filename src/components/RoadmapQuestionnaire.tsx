@@ -44,12 +44,6 @@ export default function RoadmapQuestionnaire({ onSubmit, isSubmitting = false, i
         border: (theme) => `1px solid ${theme.palette.divider}`,
       }}
     >
-      <Box sx={{ mb: 4 }}>
-        <Typography variant="h5" fontWeight={800} gutterBottom>
-          Course Roadmap Form
-        </Typography>
-      </Box>
-
       <Stack spacing={3}>
         <TextField
           fullWidth

@@ -12,6 +12,7 @@ import {
   useTheme,
   ListItemIcon,
   ListItemText,
+  CircularProgress,
 } from '@mui/material';
 import {
   Menu as MenuIcon,
@@ -20,14 +21,28 @@ import {
   AccountCircle,
   Logout,
 } from '@mui/icons-material';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '../../contexts/AuthContext';
+import { notificationApi } from '../../api/api';
 import { DRAWER_WIDTH } from './Sidebar';
 
 interface TopNavbarProps {
   onMobileMenuToggle: () => void;
   studentName?: string;
+}
+
+interface Notification {
+  id: string;
+  type: string;
+  title: string;
+  message: string;
+  resourceId?: string;
+  resourceType?: string;
+  actionUrl?: string;
+  isRead: boolean;
+  createdAt: string;
 }
 
 export default function TopNavbar({
@@ -39,6 +54,23 @@ export default function TopNavbar({
   const { user, logout } = useAuth();
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [notifAnchor, setNotifAnchor] = useState<null | HTMLElement>(null);
+
+  // Fetch unread notifications count
+  const { data: unreadData, refetch: refetchUnread } = useQuery({
+    queryKey: ['unreadCount'],
+    queryFn: () => notificationApi.getUnreadCount(),
+    refetchInterval: 30000, // Refetch every 30 seconds
+  });
+
+  // Fetch all notifications
+  const { data: notificationsData, isLoading: notificationsLoading } = useQuery({
+    queryKey: ['notifications'],
+    queryFn: () => notificationApi.getAllNotifications(10),
+    refetchInterval: 30000,
+  });
+
+  const unreadCount = unreadData?.unreadCount || 0;
+  const notifications = notificationsData?.notifications || [];
 
   const handleProfileMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
     setAnchorEl(event.currentTarget);
@@ -64,6 +96,30 @@ export default function TopNavbar({
     handleMenuClose();
   };
 
+  const handleSettings = () => {
+    navigate('/settings');
+    handleMenuClose();
+  };
+
+  const handleNotificationClick = async (notification: Notification) => {
+    try {
+      // Mark as read
+      if (!notification.isRead) {
+        await notificationApi.markAsRead(notification.id);
+        refetchUnread();
+      }
+
+      // Navigate to the appropriate page
+      if (notification.actionUrl) {
+        navigate(notification.actionUrl);
+      }
+
+      handleMenuClose();
+    } catch (error) {
+      console.error('Error handling notification click:', error);
+    }
+  };
+
   const getInitials = (name: string) => {
     return name
       .split(' ')
@@ -71,6 +127,17 @@ export default function TopNavbar({
       .join('')
       .toUpperCase()
       .substring(0, 2);
+  };
+
+  const getTimeAgo = (dateString: string) => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const seconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+
+    if (seconds < 60) return 'Just now';
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+    if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+    return `${Math.floor(seconds / 86400)}d ago`;
   };
 
   const displayName = user?.name || studentName;
@@ -107,13 +174,13 @@ export default function TopNavbar({
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           {/* Notifications */}
           <IconButton color="inherit" onClick={handleNotifMenuOpen}>
-            <Badge badgeContent={3} color="error">
+            <Badge badgeContent={unreadCount} color="error">
               <NotificationsIcon />
             </Badge>
           </IconButton>
 
           {/* Settings */}
-          <IconButton color="inherit">
+          <IconButton color="inherit" onClick={handleSettings}>
             <SettingsIcon />
           </IconButton>
 
@@ -141,7 +208,6 @@ export default function TopNavbar({
         anchorEl={anchorEl}
         open={Boolean(anchorEl)}
         onClose={handleMenuClose}
-        onClick={handleMenuClose}
         transformOrigin={{ horizontal: 'right', vertical: 'top' }}
         anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
         PaperProps={{
@@ -161,7 +227,7 @@ export default function TopNavbar({
           </ListItemIcon>
           <ListItemText>My Profile</ListItemText>
         </MenuItem>
-        <MenuItem>
+        <MenuItem onClick={handleSettings}>
           <ListItemIcon>
             <SettingsIcon fontSize="small" />
           </ListItemIcon>
@@ -184,7 +250,7 @@ export default function TopNavbar({
         transformOrigin={{ horizontal: 'right', vertical: 'top' }}
         anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
         PaperProps={{
-          sx: { mt: 1.5, minWidth: 320, maxHeight: 400 },
+          sx: { mt: 1.5, minWidth: 350, maxHeight: 450 },
         }}
       >
         <Box sx={{ px: 2, py: 1 }}>
@@ -193,30 +259,64 @@ export default function TopNavbar({
           </Typography>
         </Box>
         <Divider />
-        <MenuItem>
-          <Box>
-            <Typography variant="body2">New roadmap generated</Typography>
-            <Typography variant="caption" color="text.secondary">
-              2 hours ago
+        {notificationsLoading ? (
+          <Box sx={{ display: 'flex', justifyContent: 'center', p: 2 }}>
+            <CircularProgress size={24} />
+          </Box>
+        ) : notifications.length === 0 ? (
+          <Box sx={{ px: 2, py: 2 }}>
+            <Typography variant="body2" color="text.secondary" align="center">
+              No notifications yet
             </Typography>
           </Box>
-        </MenuItem>
-        <MenuItem>
-          <Box>
-            <Typography variant="body2">Profile sync completed</Typography>
-            <Typography variant="caption" color="text.secondary">
-              5 hours ago
-            </Typography>
-          </Box>
-        </MenuItem>
-        <MenuItem>
-          <Box>
-            <Typography variant="body2">Weekly goal achieved!</Typography>
-            <Typography variant="caption" color="text.secondary">
-              1 day ago
-            </Typography>
-          </Box>
-        </MenuItem>
+        ) : (
+          notifications.map((notification: Notification) => (
+            <MenuItem
+              key={notification.id}
+              onClick={() => handleNotificationClick(notification)}
+              sx={{
+                backgroundColor: notification.isRead ? 'transparent' : 'action.hover',
+                '&:hover': {
+                  backgroundColor: 'action.selected',
+                },
+                py: 1.5,
+                px: 2,
+                borderBottom: `1px solid ${theme.palette.divider}`,
+                cursor: 'pointer',
+              }}
+            >
+              <Box sx={{ width: '100%' }}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <Typography
+                    variant="body2"
+                    fontWeight={notification.isRead ? '400' : '600'}
+                    sx={{ flex: 1 }}
+                  >
+                    {notification.title}
+                  </Typography>
+                  {!notification.isRead && (
+                    <Box
+                      sx={{
+                        width: 8,
+                        height: 8,
+                        borderRadius: '50%',
+                        backgroundColor: theme.palette.primary.main,
+                        ml: 1,
+                        mt: 0.5,
+                      }}
+                    />
+                  )}
+                </Box>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                  {notification.message}
+                </Typography>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5, opacity: 0.7 }}>
+                  {getTimeAgo(notification.createdAt)}
+                </Typography>
+              </Box>
+            </MenuItem>
+          ))
+        )}
       </Menu>
     </AppBar>
   );

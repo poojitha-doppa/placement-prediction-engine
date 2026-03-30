@@ -8,6 +8,7 @@ import {
   syncLeetCodeProfile
 } from '../services/integration.service.js';
 import { recomputeCompanyMatchesForUser } from '../services/companyMatch.service.js';
+import { createNotification } from '../services/notification.service.js';
 
 const isDatabaseAvailable = async () => {
   try {
@@ -236,6 +237,15 @@ export const syncIntegration = async (req: AuthRequest, res: Response) => {
 
     await recomputeCompanyMatchesForUser(req.user.id, updatedProfile);
 
+    await createNotification({
+      userId: req.user.id,
+      type: 'integration_synced',
+      title: `${provider === 'github' ? 'GitHub' : 'LeetCode'} Synced`,
+      message: `${provider === 'github' ? 'GitHub' : 'LeetCode'} profile synced successfully for ${username}.`,
+      resourceType: 'profile',
+      actionUrl: '/profile'
+    });
+
     res.json({
       message: `${provider} sync completed successfully.`,
       warning: syncWarning,
@@ -266,6 +276,15 @@ export const syncIntegration = async (req: AuthRequest, res: Response) => {
             syncStatus: 'error',
             syncError: error.message
           }
+        });
+
+        await createNotification({
+          userId: req.user.id,
+          type: 'integration_sync_failed',
+          title: `${provider === 'github' ? 'GitHub' : 'LeetCode'} Sync Failed`,
+          message: error.message || `Failed to sync ${provider} profile.`,
+          resourceType: 'profile',
+          actionUrl: '/profile'
         });
       } catch {
         // Best-effort status update

@@ -103,6 +103,7 @@ export default function DashboardPage() {
   const summary = summaryData;
   const skills = skillData;
   const companies = companyData;
+  const problemsSolvedCount = profile?.leetcodeSolved ?? summary?.totalProblemsSolved ?? 0;
 
   // Show dashboard with data - no longer blocking on incomplete profile
   // The profile is pre-populated with demo data
@@ -539,7 +540,7 @@ export default function DashboardPage() {
           ) : (
             <KpiCard
               title="Problems Solved"
-              value={summary?.totalProblemsSolved || 0}
+              value={problemsSolvedCount}
               subtitle="Total count"
               trend={{ value: 5, direction: 'up' }}
               icon={<Timeline />}

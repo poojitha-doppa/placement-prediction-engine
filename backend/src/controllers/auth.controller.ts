@@ -6,6 +6,7 @@ import prisma from '../config/db.js';
 import { config } from '../config/index.js';
 import { signupSchema, loginSchema } from '../utils/validation.js';
 import { mockUsersCache } from '../middleware/auth.js';
+import { getRoleForEmail } from '../utils/roles.js';
 
 // In-memory store for mock mode
 const mockUsers: any[] = [];
@@ -93,12 +94,18 @@ export const signup = async (req: Request, res: Response) => {
       });
 
       const token = jwt.sign(
-        { sub: user.id },
+        { sub: user.id, email: user.email, role: getRoleForEmail(user.email) },
         config.jwtSecret as string,
         { expiresIn: config.jwtExpiresIn } as SignOptions
       );
 
-      res.status(201).json({ user, token });
+      res.status(201).json({
+        user: {
+          ...user,
+          role: getRoleForEmail(user.email)
+        },
+        token
+      });
     } else {
       // Mock mode
       const existingUser = mockUsers.find(u => u.email === validatedData.email);
@@ -122,13 +129,18 @@ export const signup = async (req: Request, res: Response) => {
       mockUsersCache.users = mockUsers;
 
       const token = jwt.sign(
-        { sub: user.id },
+        { sub: user.id, email: user.email, role: getRoleForEmail(user.email) },
         config.jwtSecret as string,
         { expiresIn: config.jwtExpiresIn } as SignOptions
       );
 
       res.status(201).json({ 
-        user: { id: user.id, email: user.email, name: user.name },
+        user: {
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          role: getRoleForEmail(user.email)
+        },
         token 
       });
     }
@@ -167,7 +179,7 @@ export const login = async (req: Request, res: Response) => {
       }
 
       const token = jwt.sign(
-        { sub: user.id },
+        { sub: user.id, email: user.email, role: getRoleForEmail(user.email) },
         config.jwtSecret as string,
         { expiresIn: config.jwtExpiresIn } as SignOptions
       );
@@ -177,7 +189,8 @@ export const login = async (req: Request, res: Response) => {
         user: {
           id: user.id,
           email: user.email,
-          name: user.name
+          name: user.name,
+          role: getRoleForEmail(user.email)
         },
         token
       });
@@ -203,7 +216,7 @@ export const login = async (req: Request, res: Response) => {
       }
 
       const token = jwt.sign(
-        { sub: user.id },
+        { sub: user.id, email: user.email, role: getRoleForEmail(user.email) },
         config.jwtSecret as string,
         { expiresIn: config.jwtExpiresIn } as SignOptions
       );
@@ -213,7 +226,8 @@ export const login = async (req: Request, res: Response) => {
         user: {
           id: user.id,
           email: user.email,
-          name: user.name
+          name: user.name,
+          role: getRoleForEmail(user.email)
         },
         token
       });
@@ -251,7 +265,12 @@ export const getCurrentUser = async (req: any, res: Response) => {
         return res.status(404).json({ error: 'User not found' });
       }
 
-      res.json({ user });
+      res.json({
+        user: {
+          ...user,
+          role: getRoleForEmail(user.email)
+        }
+      });
     } else {
       // Mock mode
       const user = mockUsers.find(u => u.id === req.user.id);
@@ -265,7 +284,8 @@ export const getCurrentUser = async (req: any, res: Response) => {
           id: user.id,
           email: user.email,
           name: user.name,
-          createdAt: user.createdAt
+          createdAt: user.createdAt,
+          role: getRoleForEmail(user.email)
         }
       });
     }
