@@ -165,12 +165,6 @@ npm run dev:ml
 - Backend: `http://localhost:3000`
 - ML health: `http://127.0.0.1:5000/health`
 
-## Default login
-
-```text
-Email: poojithadoppa8@gmail.com
-Password: Poojitha@2006
-```
 
 ## How the product flow works
 
